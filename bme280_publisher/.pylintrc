@@ -1,0 +1,27 @@
+[MASTER]
+disable=
+    C0111, # missing docstring
+    C0103, # invalid-name
+    C0303, # trailing-whitespace
+    C0330, # bad-continuation
+    C1801, # len-as-condition
+    W0621, # redefined-outer-name
+    R0903, # too-few-public-methods
+    R0913, # too-many-arguments
+    R0914, # too-many-locals
+
+[FORMAT]
+max-line-length=100
+
+[BASIC]
+good-names=i,j,k,ex,Run,_,id,df
+
+[DESIGN]
+max-args=6
+max-attributes=12
+
+[SIMILARITIES]
+min-similarity-lines=7
+ignore-comments=yes
+ignore-docstrings=yes
+ignore-imports=yes 

@@ -1,0 +1,12 @@
+.calendar-heatmap-container {
+  max-width: 400px; /* obmedzí šírku */
+  margin: 0 auto;
+}
+
+.calendar-heatmap-container .react-calendar-heatmap-day {
+  /* ak by ste chceli zmenšovať priamo tu */
+  stroke: #ce8888;
+  shape-rendering: crispEdges;
+  width: 10px;
+  height: 10px;
+}

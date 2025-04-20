@@ -1,0 +1,1 @@
+<obsah zo súboru v canvas – bude vložený automaticky>

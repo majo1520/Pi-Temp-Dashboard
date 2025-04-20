@@ -1,0 +1,11 @@
+adafruit-circuitpython-bme280==2.6.1
+paho-mqtt==1.6.1
+zoneinfo==0.2.1; python_version < '3.9'
+configparser==5.3.0
+board==1.0
+busio==1.1.2
+RPi.GPIO==0.7.1
+pytest>=7.0.0
+pytest-mock>=3.8.0
+pytest-cov>=4.0.0
+pylint>=2.15.0 

@@ -1,0 +1,626 @@
+/**
+ * API service for making requests to the backend
+ */
+
+import config from '../config';
+const API_BASE_URL = '/api';
+
+/**
+ * Get all sensors
+ * @returns {Promise<Array>} - Array of sensors
+ */
+export async function getSensors() {
+  // Add cache-busting parameter to avoid browser caching
+  const cacheBuster = `_=${Date.now()}`;
+  const response = await fetch(`${API_BASE_URL}/sensors?${cacheBuster}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch sensors');
+  }
+  return response.json();
+}
+
+/**
+ * Get sensor history data
+ * @param {string} sensorName - Sensor location name
+ * @param {string} range - Time range (e.g. "24h", "7d")
+ * @returns {Promise<Array>} - Array of sensor data points
+ */
+export async function getSensorHistory(sensorName, range = "24h") {
+  const response = await fetch(`${API_BASE_URL}/sensors/${sensorName}/history?range=${range}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch sensor history');
+  }
+  return response.json();
+}
+
+/**
+ * Get all sensor locations
+ * @returns {Promise<Array>} - Array of location names
+ */
+export async function getSensorLocations() {
+  const response = await fetch(`${API_BASE_URL}/sensors`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch sensor locations');
+  }
+  const data = await response.json();
+  return data.map(s => s.name);
+}
+
+/**
+ * Check the user's session status
+ * @returns {Promise<Object>} - Session information {loggedIn: boolean, user?: Object}
+ */
+export async function checkSession() {
+  const response = await fetch(`${API_BASE_URL}/session`, { 
+    credentials: 'include' 
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to check session');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Get historical data for multiple fields and locations
+ * @param {Object} options - Query options
+ * @param {Array<string>} options.locations - Sensor locations
+ * @param {Array<string>} options.fields - Field names (teplota, vlhkost, tlak)
+ * @param {Object} options.timeRange - Time range parameters
+ * @returns {Promise<Object>} - Structured historical data
+ */
+export async function getHistoricalData(options) {
+  const { locations = [], fields = [], timeRange } = options;
+  console.log('getHistoricalData called with:', { locations, fields, timeRange });
+  
+  // Calculate downsampling interval based on range dynamically
+  function getCustomAggregator(start, stop) {
+    const diffMs = new Date(stop) - new Date(start);
+    const diffH = diffMs / (1000 * 60 * 60);
+    
+    console.log(`Time range span: ${diffH.toFixed(1)} hours`);
+
+    if (diffH <= 1) return "10s";      // pre živý režim
+    if (diffH <= 6) return "30s";      // veľmi detailné sledovanie
+    if (diffH <= 12) return "1m";
+    if (diffH <= 24) return "2m";
+    if (diffH <= 72) return "5m";
+    if (diffH <= 168) return "15m";    // 7 dní
+    if (diffH <= 720) return "1h";     // 30 dní
+    if (diffH <= 2160) return "3h";    // 3 mesiace
+    if (diffH <= 8760) return "6h";    // 1 rok
+    return "24h";                      // viac než rok - using daily sampling for multi-year
+  }
+  
+  // Determine appropriate downsampling based on range
+  const getDownsampleInterval = (rangeKey, customStart, customEnd) => {
+    // For live data, no downsampling
+    if (rangeKey === 'live') return null;
+    
+    // For custom ranges, use the custom aggregator function
+    if (rangeKey === 'custom' && customStart && customEnd) {
+      return getCustomAggregator(customStart, customEnd);
+    }
+    
+    // For predefined ranges, calculate start and end times
+    let start, stop;
+    if (rangeKey === '1h') {
+      start = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
+      stop = new Date().toISOString();
+    } else if (rangeKey === '6h') {
+      start = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+      stop = new Date().toISOString();
+    } else if (rangeKey === '12h') {
+      start = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+      stop = new Date().toISOString();
+    } else if (rangeKey === '24h') {
+      start = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      stop = new Date().toISOString();
+    } else if (rangeKey === '7d') {
+      start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      stop = new Date().toISOString();
+    } else if (rangeKey === '30d') {
+      start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      stop = new Date().toISOString();
+    } else if (rangeKey === '365d') {
+      start = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+      stop = new Date().toISOString();
+    } else {
+      // Default to 24h if unknown range
+      start = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      stop = new Date().toISOString();
+    }
+    
+    // Use the custom aggregator for predefined ranges too
+    return getCustomAggregator(start, stop);
+  };
+  
+  // Build query parameters
+  const params = new URLSearchParams();
+  
+  let downsample = null;
+  
+  // Handle time range dynamically
+  if (timeRange.rangeKey === 'custom' && timeRange.start && timeRange.end) {
+    params.set('start', new Date(timeRange.start).toISOString());
+    params.set('stop', new Date(timeRange.end).toISOString());
+    downsample = getDownsampleInterval(timeRange.rangeKey, timeRange.start, timeRange.end);
+  } else if (timeRange.rangeKey && timeRange.rangeKey !== 'live') {
+    params.set('range', timeRange.rangeKey);
+    downsample = getDownsampleInterval(timeRange.rangeKey);
+  } else {
+    params.set('range', '24h');
+  }
+  
+  // Add downsampling parameters if needed
+  if (downsample) {
+    console.log(`Using downsample interval: ${downsample} for range: ${timeRange.rangeKey}`);
+    params.set('aggregation', 'true');
+    params.set('downsample', downsample);
+  }
+  
+  // Set location and fields
+  if (locations.length) {
+    params.set('location', locations.join(','));
+  }
+  
+  if (fields.length) {
+    params.set('field', fields.join(','));
+  } else {
+    params.set('field', 'all');
+  }
+  
+  // Format: csv, json, or lp
+  params.set('format', 'json');
+  
+  // Add timestamp to prevent caching
+  params.set('t', Date.now());
+  
+  // For testing - log the complete URL for debugging
+  const url = `${API_BASE_URL}/sensors/${locations[0]}/history?${params.toString()}`;
+  console.log('Making request to:', url);
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('API Error:', {
+      status: response.status,
+      statusText: response.statusText,
+      error: errorText
+    });
+    throw new Error(`Failed to fetch historical data: ${response.status} ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  console.log('API Response size:', data.length, 'records');
+  return data;
+}
+
+/**
+ * Update sensor visibility
+ * @param {string} sensorName - Sensor name/location
+ * @param {Object} visibility - Visibility settings
+ * @param {boolean} visibility.cardVisible - Card visibility
+ * @param {boolean} visibility.locationVisible - Location visibility
+ * @returns {Promise<Object>} - Updated sensor
+ */
+export async function updateSensorVisibility(sensorName, visibility) {
+  console.log(`API call: updateSensorVisibility for ${sensorName}`, visibility); // Debug log
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/sensors/${sensorName}/visibility`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(visibility),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Server error: ${response.status}`, errorText);
+      throw new Error(`Failed to update sensor visibility: ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    console.log('Visibility update successful:', result); // Debug log
+    return result;
+  } catch (error) {
+    console.error('Error in updateSensorVisibility:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get sensor status information
+ * @returns {Promise<Array>} - Array of sensor status objects
+ */
+export async function getSensorStatuses() {
+  const response = await fetch(`${API_BASE_URL}/sensors/status`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch sensor statuses');
+  }
+  return response.json();
+}
+
+/**
+ * Add a new location/sensor
+ * @param {string} locationName - Name of the new location
+ * @returns {Promise<string>} - Success message
+ */
+export async function addLocation(locationName) {
+  const response = await fetch(`${API_BASE_URL}/add-location`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ location: locationName }),
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to add location');
+  }
+  
+  return response.text();
+}
+
+/**
+ * Delete a location/sensor
+ * @param {string} locationName - Name of the location to delete
+ * @returns {Promise<string>} - Success message
+ */
+export async function deleteLocation(locationName) {
+  const response = await fetch(`${API_BASE_URL}/delete-location`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ location: locationName }),
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to delete location');
+  }
+  
+  return response.text();
+}
+
+/**
+ * Login to admin panel
+ * @param {string} username - Username or email
+ * @param {string} password - Admin password
+ * @returns {Promise<Object>} - Login result
+ */
+export async function login(username, password) {
+  const response = await fetch(`${API_BASE_URL}/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ username, password }),
+  });
+  
+  return response.json();
+}
+
+/**
+ * Logout from admin panel
+ * @returns {Promise<void>}
+ */
+export async function logout() {
+  await fetch(`${API_BASE_URL}/logout`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+  });
+}
+
+/**
+ * Imports line-protocol data and associates it with a location
+ * @param {File} file - The line-protocol file to upload
+ * @param {string} location - The location to associate with the data
+ * @returns {Promise<string>} - Success message
+ */
+export const importLineProtocol = (file, location) => {
+  const formData = new FormData();
+  formData.append("lpfile", file);
+  formData.append("location", location);
+
+  return fetch("/api/import-lp", {
+    method: "POST",
+    body: formData,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(
+          `Import error: ${res.status} ${res.statusText}\n${text}`
+        );
+      }
+      return res.text();
+    });
+};
+
+/**
+ * Exports sensor data in the requested format
+ * @param {Object} params - Export parameters
+ * @param {string} params.field - Field to export (optional)
+ * @param {string} params.location - Location to export (optional)
+ * @param {string} params.start - Start time (e.g. '-24h' or '0' for all)
+ * @param {string} params.stop - End time (usually 'now()')
+ * @param {string} params.format - Export format ('csv', 'json', or 'lp')
+ * @returns {Promise<Blob>} - The exported data as a Blob
+ */
+export const exportData = async ({
+  field = "",
+  location = "",
+  start = "-30d",
+  stop = "now()",
+  format = "csv"
+}) => {
+  const params = new URLSearchParams({
+    field,
+    location,
+    start,
+    stop,
+    format,
+    t: Date.now(), // Cache-busting parameter
+  });
+
+  const fileType = format === "json"
+    ? "application/json"
+    : format === "lp"
+      ? "text/plain"
+      : "text/csv";
+
+  const response = await fetch(`/api/export?${params}`, {
+    headers: {
+      Accept: fileType,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Export failed: ${response.status} ${response.statusText}`);
+  }
+
+  return await response.blob();
+};
+
+/**
+ * Get all user settings
+ * @returns {Promise<Object>} - All user settings
+ */
+export async function getUserSettings() {
+  const response = await fetch(`${API_BASE_URL}/user-settings`, {
+    credentials: 'include'
+  });
+  
+  if (!response.ok) {
+    if (response.status === 401) {
+      console.warn('User is not authenticated. Using localStorage for settings.');
+      return null;
+    }
+    throw new Error('Failed to fetch user settings');
+  }
+  
+  return response.json();
+}
+
+/**
+ * Get a specific user setting
+ * @param {string} key - Setting key
+ * @returns {Promise<any>} - Setting value
+ */
+export async function getUserSetting(key) {
+  const response = await fetch(`${API_BASE_URL}/user-settings/${key}`, {
+    credentials: 'include'
+  });
+  
+  if (!response.ok) {
+    if (response.status === 401) {
+      console.warn('User is not authenticated. Using localStorage for settings.');
+      return null;
+    }
+    if (response.status === 404) {
+      return null;
+    }
+    throw new Error(`Failed to fetch user setting: ${key}`);
+  }
+  
+  const data = await response.json();
+  return data[key];
+}
+
+/**
+ * Update a user setting
+ * @param {string} key - Setting key
+ * @param {any} value - Setting value
+ * @returns {Promise<Object>} - Result of the update
+ */
+export async function updateUserSetting(key, value) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/user-settings/${key}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ value }),
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        console.warn('User is not authenticated. Setting will only be saved locally.');
+        return null;
+      }
+      
+      // Try to get a proper error message
+      let errorMessage;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+      } catch (e) {
+        // If we can't parse JSON, use the status text
+        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      }
+      
+      throw new Error(`Failed to update user setting: ${key} - ${errorMessage}`);
+    }
+    
+    return response.json();
+  } catch (error) {
+    // Log the error and rethrow it
+    console.error(`Error in updateUserSetting (${key}):`, error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a user setting
+ * @param {string} key - Setting key
+ * @returns {Promise<Object>} - Result of the deletion
+ */
+export async function deleteUserSetting(key) {
+  const response = await fetch(`${API_BASE_URL}/user-settings/${key}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  
+  if (!response.ok) {
+    if (response.status === 401) {
+      console.warn('User is not authenticated. Cannot delete setting from server.');
+      return null;
+    }
+    throw new Error(`Failed to delete user setting: ${key}`);
+  }
+  
+  return response.json();
+}
+
+/**
+ * Get all users (admin only)
+ * @returns {Promise<Array>} Array of user objects
+ */
+export const getUsers = async () => {
+  const response = await fetch('/api/users', {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include'
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to fetch users');
+  }
+  
+  return response.json();
+};
+
+/**
+ * Create a new user (admin only)
+ * @param {Object} userData - User data object with username, password, email, roles
+ * @returns {Promise<Object>} Created user object
+ */
+export const createUser = async (userData) => {
+  const response = await fetch('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(userData)
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create user');
+  }
+  
+  return response.json();
+};
+
+/**
+ * Reset a user's password (admin only)
+ * @param {number} userId - The ID of the user whose password to reset
+ * @param {string} newPassword - The new password
+ * @returns {Promise<Object>} Operation result
+ */
+export const resetUserPassword = async (userId, newPassword) => {
+  try {
+    console.log(`Attempting to reset password for user ID: ${userId}`);
+    
+    const response = await fetch(`/api/users/${userId}/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ newPassword })
+    });
+    
+    if (!response.ok) {
+      let errorMessage = 'Failed to reset password';
+      
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+        console.error('Password reset error response:', errorData);
+      } catch (parseError) {
+        // If response cannot be parsed as JSON
+        errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        console.error('Error parsing server response:', parseError);
+      }
+      
+      throw new Error(errorMessage);
+    }
+    
+    const result = await response.json();
+    console.log('Password reset successful:', result);
+    return result;
+  } catch (error) {
+    console.error('Error in resetUserPassword:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update a user (admin only)
+ * @param {number} userId - The ID of the user to update
+ * @param {object} userData - Data to update (username, email, active, roles)
+ * @returns {Promise<Object>} Updated user data
+ */
+export const updateUser = async (userId, userData) => {
+  const response = await fetch(`/api/users/${userId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(userData)
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to update user');
+  }
+  
+  return response.json();
+};
+
+/**
+ * Delete a user (admin only)
+ * @param {number} userId - The ID of the user to delete
+ * @returns {Promise<Object>} Operation result
+ */
+export const deleteUser = async (userId) => {
+  const response = await fetch(`/api/users/${userId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include'
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to delete user');
+  }
+  
+  return response.json();
+}; 

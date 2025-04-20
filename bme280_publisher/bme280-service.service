@@ -1,0 +1,23 @@
+[Unit]
+Description=BME280 Sensor MQTT Publisher
+After=network.target mosquitto.service
+Wants=mosquitto.service
+
+[Service]
+Type=simple
+User=admin
+WorkingDirectory=/home/admin/dashboard_refaktor
+ExecStart=/usr/bin/python3 /home/admin/dashboard_refaktor/bme280_publisher.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bme280-sensor
+
+# Security hardening
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target 
