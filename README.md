@@ -34,7 +34,19 @@ The system consists of the following integrated components:
 7. **Backend Server** - Node.js Express server with API endpoints and authentication
 8. **Frontend Dashboard** - React application with ApexCharts for visualization and performance monitoring
 
-> **Note**: For a more detailed interactive view of the architecture, open `docs/architecture.html` in your web browser. Text-based representation is also available in `docs/architecture.txt`.
+> **Note**: For a detailed interactive view of the architecture, open `docs/architecture.html` in your web browser. This HTML visualization shows the complete system architecture with color-coded components, data flow arrows, and detailed descriptions of each component's functionality.
+
+## Data Flow
+
+1. BME280 sensors collect environmental data (temperature, humidity, pressure) at configured intervals
+2. Python Sensor Publisher reads sensor data via I2C, formats it as JSON, and publishes to MQTT topics
+3. MQTT Broker receives published messages and makes them available to subscribers
+4. Telegraf subscribes to relevant MQTT topics, processes incoming data, and writes it to InfluxDB
+5. InfluxDB stores time-series data with timestamps and applies configured retention policies
+6. Backend Server queries InfluxDB for sensor data when API endpoints are accessed
+7. Backend Server retrieves user authentication and system configuration from SQLite
+8. Frontend Dashboard requests data from Backend API and renders visualizations
+9. Users interact with the Dashboard to view real-time data, historical trends, and receive alerts
 
 ## Documentation
 
@@ -42,6 +54,7 @@ The system consists of the following integrated components:
 - [Performance Optimization](docs/PERFORMANCE_OPTIMIZATION.md) - Detailed overview of implemented performance optimizations
 - [User Roles & Permissions](docs/USER_ROLES.md) - Complete guide to the role-based access control system
 - [Database Documentation](docs/DATABASE.md) - Detailed information about SQLite implementation and database schema
+- [Architecture](docs/ARCHITECTURE.png) - Interactive HTML visualization of the system architecture
 
 ## Screenshots
 
