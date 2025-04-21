@@ -70,31 +70,56 @@ export async function checkSession() {
  * @param {Object} options.timeRange - Time range parameters
  * @returns {Promise<Object>} - Structured historical data
  */
-export async function getHistoricalData(options) {
-  const { locations = [], fields = [], timeRange } = options;
-  console.log('getHistoricalData called with:', { locations, fields, timeRange });
-  
-  // Calculate downsampling interval based on range dynamically
-  function getCustomAggregator(start, stop) {
-    const diffMs = new Date(stop) - new Date(start);
-    const diffH = diffMs / (1000 * 60 * 60);
-    
-    console.log(`Time range span: ${diffH.toFixed(1)} hours`);
-
-    if (diffH <= 1) return "10s";      // pre živý režim
-    if (diffH <= 6) return "30s";      // veľmi detailné sledovanie
-    if (diffH <= 12) return "1m";
-    if (diffH <= 24) return "2m";
-    if (diffH <= 72) return "5m";
-    if (diffH <= 168) return "15m";    // 7 dní
-    if (diffH <= 720) return "1h";     // 30 dní
-    if (diffH <= 2160) return "3h";    // 3 mesiace
-    if (diffH <= 8760) return "6h";    // 1 rok
-    return "24h";                      // viac než rok - using daily sampling for multi-year
+export async function getHistoricalData({ locations = [], timeRange = { rangeKey: '24h' }, fields = [] }) {
+  if (!locations.length) {
+    console.warn('No locations specified for historical data fetch');
+    return {};
   }
   
-  // Determine appropriate downsampling based on range
-  const getDownsampleInterval = (rangeKey, customStart, customEnd) => {
+  // Validate custom range parameters
+  if (timeRange.rangeKey === 'custom' && (!timeRange.start || !timeRange.end)) {
+    console.error('Custom range selected but start/end dates not provided');
+    throw new Error('customRangeError');
+  }
+  
+  // Validate that start date is before end date for custom range
+  if (timeRange.rangeKey === 'custom' && timeRange.start && timeRange.end) {
+    const startDate = new Date(timeRange.start);
+    const endDate = new Date(timeRange.end);
+    if (startDate >= endDate) {
+      console.error('Invalid custom range: start date must be before end date');
+      throw new Error('customRangeInvalidDates');
+    }
+  }
+  
+  // Custom aggregator function to determine appropriate time window
+  function getCustomAggregator(start, stop) {
+    const startDate = new Date(start);
+    const stopDate = new Date(stop);
+    const durationMs = stopDate - startDate;
+    
+    // Calculate appropriate window based on data duration
+    if (durationMs > 365 * 24 * 60 * 60 * 1000) { // > 1 year
+      return '12h';
+    } else if (durationMs > 30 * 24 * 60 * 60 * 1000) { // > 30 days
+      return '6h';
+    } else if (durationMs > 7 * 24 * 60 * 60 * 1000) { // > 7 days
+      return '1h';
+    } else if (durationMs > 24 * 60 * 60 * 1000) { // > 1 day
+      return '30m';
+    } else if (durationMs > 12 * 60 * 60 * 1000) { // > 12 hours
+      return '15m';
+    } else if (durationMs > 6 * 60 * 60 * 1000) { // > 6 hours
+      return '5m';
+    } else if (durationMs > 60 * 60 * 1000) { // > 1 hour
+      return '2m';
+    } else {
+      return '30s';
+    }
+  }
+  
+  // Calculate downsampling interval based on range dynamically
+  function getDownsampleInterval(rangeKey, customStart, customEnd) {
     // For live data, no downsampling
     if (rangeKey === 'live') return null;
     
@@ -134,7 +159,7 @@ export async function getHistoricalData(options) {
     
     // Use the custom aggregator for predefined ranges too
     return getCustomAggregator(start, stop);
-  };
+  }
   
   // Build query parameters
   const params = new URLSearchParams();

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Component to display errors from our error handler
@@ -8,6 +9,8 @@ import React from 'react';
  * @returns {JSX.Element|null} Error display component or null if no errors
  */
 function ErrorDisplay({ errors, clearErrors }) {
+  const { t } = useTranslation();
+  
   // Exit early if no errors
   if (!errors || Object.keys(errors).filter(key => errors[key]).length === 0) {
     return null;
@@ -21,6 +24,20 @@ function ErrorDisplay({ errors, clearErrors }) {
   if (activeErrors.length === 0) {
     return null;
   }
+  
+  // Function to translate error messages if they match translation keys
+  const translateErrorMessage = (message) => {
+    // Check if message is a translation key
+    if (message === 'customRangeError') {
+      return t('customRangeError');
+    }
+    if (message === 'customRangeInvalidDates') {
+      return t('customRangeInvalidDates');
+    }
+    
+    // Otherwise return the original message
+    return message;
+  };
 
   return (
     <div className="fixed bottom-4 right-4 z-50 max-w-md w-full">
@@ -33,7 +50,7 @@ function ErrorDisplay({ errors, clearErrors }) {
           <div className="flex justify-between items-start">
             <div>
               <div className="font-bold">Error in {error.context}</div>
-              <p>{error.message}</p>
+              <p>{translateErrorMessage(error.message)}</p>
               <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 {new Date(error.timestamp).toLocaleTimeString()}
               </div>
@@ -54,7 +71,7 @@ function ErrorDisplay({ errors, clearErrors }) {
           onClick={() => clearErrors()}
           className="w-full bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200 p-2 rounded shadow-lg text-center hover:bg-red-200 dark:hover:bg-red-700"
         >
-          Clear All Errors
+          {t('clearAllErrors') || 'Clear All Errors'}
         </button>
       )}
     </div>

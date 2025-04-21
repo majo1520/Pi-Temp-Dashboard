@@ -218,5 +218,9 @@
   "showSensorCard": "Show sensor card",
   "locationVisibilityTooltip": "Toggle to show/hide this location in the main dashboard list",
   "cardVisibilityTooltip": "Toggle to show this sensor card",
-  "defaultSelectionSaved": "Default selection saved successfully"
+  "defaultSelectionSaved": "Default selection saved successfully",
+  "fillDatesFirst": "Please select start and end dates first",
+  "applyCustomRangeHint": "Select dates and click Apply to view data",
+  "customRangeError": "When using custom range, you must specify start and end dates and click Apply",
+  "customRangeInvalidDates": "The selected date range is invalid. The start date must be before the end date."
 } 
