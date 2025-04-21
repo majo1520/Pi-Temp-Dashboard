@@ -30,8 +30,9 @@ The system consists of the following integrated components:
 3. **MQTT Broker** - Message broker for real-time data distribution with WebSocket support
 4. **Telegraf** - Data collector that processes data from MQTT to InfluxDB with filtering
 5. **InfluxDB** - Time-series database for efficient historical data storage and retrieval
-6. **Backend Server** - Node.js Express server with API endpoints and authentication
-7. **Frontend Dashboard** - React application with ApexCharts for visualization and performance monitoring
+6. **SQLite** - Relational database for user management, settings, and UI preferences
+7. **Backend Server** - Node.js Express server with API endpoints and authentication
+8. **Frontend Dashboard** - React application with ApexCharts for visualization and performance monitoring
 
 > **Note**: For a more detailed interactive view of the architecture, open `docs/architecture.html` in your web browser. Text-based representation is also available in `docs/architecture.txt`.
 
@@ -40,6 +41,7 @@ The system consists of the following integrated components:
 - [Installation Guide](docs/INSTALLATION.md) - Comprehensive setup instructions for all components
 - [Performance Optimization](docs/PERFORMANCE_OPTIMIZATION.md) - Detailed overview of implemented performance optimizations
 - [User Roles & Permissions](docs/USER_ROLES.md) - Complete guide to the role-based access control system
+- [Database Documentation](docs/DATABASE.md) - Detailed information about SQLite implementation and database schema
 
 ## Screenshots
 

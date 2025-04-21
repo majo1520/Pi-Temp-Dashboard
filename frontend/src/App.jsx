@@ -301,33 +301,71 @@ function DashboardContent() {
 
   // Create aggregated cards component for reuse
   const createAggregatedCards = useCallback((series, options = aggregationOptions) => {
-    return (options.min || options.avg || options.max) ? (
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {options.min && (
-          <AggregationCard 
-            type="min" 
-            value={Math.min(...series.flatMap(s => s.data.map(d => d.y)).filter(v => !isNaN(v)))} 
-            time={null} 
-          />
-        )}
-        {options.avg && (
-          <AggregationCard 
-            type="avg" 
-            value={series.flatMap(s => s.data.map(d => d.y)).filter(v => !isNaN(v)).reduce((a, b) => a + b, 0) / 
-                  series.flatMap(s => s.data.map(d => d.y)).filter(v => !isNaN(v)).length} 
-            time={null} 
-          />
-        )}
-        {options.max && (
-          <AggregationCard 
-            type="max" 
-            value={Math.max(...series.flatMap(s => s.data.map(d => d.y)).filter(v => !isNaN(v)))} 
-            time={null} 
-          />
-        )}
+    if (!(options.min || options.avg || options.max)) return null;
+    
+    // Group series by field type (teplota, vlhkost, tlak)
+    const fieldGroups = {};
+    
+    series.forEach(s => {
+      // Extract field name from series name (format: "location - field")
+      const fieldMatch = s.name.toLowerCase().match(/(teplota|vlhkost|tlak)/);
+      if (fieldMatch) {
+        const field = fieldMatch[0];
+        if (!fieldGroups[field]) {
+          fieldGroups[field] = [];
+        }
+        fieldGroups[field].push(s);
+      }
+    });
+    
+    // Map field names to translation keys
+    const fieldToTranslationKey = {
+      teplota: "temperature",
+      vlhkost: "humidity",
+      tlak: "pressure"
+    };
+    
+    return (
+      <div className="grid grid-cols-1 gap-4">
+        {Object.entries(fieldGroups).map(([field, fieldSeries]) => {
+          // Skip if no data for this field
+          if (!fieldSeries.length) return null;
+          
+          const translatedField = t(fieldToTranslationKey[field] || field);
+          
+          return (
+            <div key={field} className="mb-4">
+              <h3 className="text-lg font-semibold mb-2 capitalize">{translatedField}</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {options.min && (
+                  <AggregationCard 
+                    type="min" 
+                    value={Math.min(...fieldSeries.flatMap(s => s.data.map(d => d.y)).filter(v => !isNaN(v)))} 
+                    time={null} 
+                  />
+                )}
+                {options.avg && (
+                  <AggregationCard 
+                    type="avg" 
+                    value={fieldSeries.flatMap(s => s.data.map(d => d.y)).filter(v => !isNaN(v)).reduce((a, b) => a + b, 0) / 
+                          fieldSeries.flatMap(s => s.data.map(d => d.y)).filter(v => !isNaN(v)).length} 
+                    time={null} 
+                  />
+                )}
+                {options.max && (
+                  <AggregationCard 
+                    type="max" 
+                    value={Math.max(...fieldSeries.flatMap(s => s.data.map(d => d.y)).filter(v => !isNaN(v)))} 
+                    time={null} 
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
-    ) : null;
-  }, [aggregationOptions]);
+    );
+  }, [aggregationOptions, t]);
 
   return (
     <div className={darkMode ? "dark" : ""}>

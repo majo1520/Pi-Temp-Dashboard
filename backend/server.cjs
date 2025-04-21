@@ -568,6 +568,14 @@ app.get('/api/sensors/:name/history', async (req, res) => {
     query: req.query
   });
   
+  // If range is "custom" but no custom timerange parameters are provided, return an error
+  if (range === "custom" && !customTimeRange) {
+    return res.status(400).json({ 
+      error: "Missing date range parameters",
+      details: "When using 'custom' range, both 'start' and 'stop' parameters must be provided"
+    });
+  }
+  
   // Check cache first - include downsample in cache key if present
   const timeRangeKey = customTimeRange ? `${startTime.substring(0, 10)}_${stopTime.substring(0, 10)}` : range;
   const cacheKey = `history_${sensorName}_${timeRangeKey}_${fields.join('_')}_${aggregation ? downsample || 'agg' : 'raw'}`;
@@ -587,7 +595,9 @@ app.get('/api/sensors/:name/history', async (req, res) => {
     if (customTimeRange) {
       rangeClause = `range(start: ${startTime}, stop: ${stopTime})`;
     } else {
-      rangeClause = `range(start: -${range})`;
+      // Make sure "custom" doesn't get passed directly to InfluxDB
+      const influxRange = (range === "custom") ? "24h" : range;
+      rangeClause = `range(start: -${influxRange})`;
     }
     
     if (aggregation && downsample) {

@@ -97,6 +97,7 @@ function FilterControls({ visibleLocationSensors, locations }) {
                 className="border rounded px-2 py-1 text-sm"
                 value={tempCustomStart}
                 onChange={(e) => setTempCustomStart(e.target.value)}
+                required
               />
               <label className="text-sm">{t('to')}:</label>
               <input
@@ -104,14 +105,25 @@ function FilterControls({ visibleLocationSensors, locations }) {
                 className="border rounded px-2 py-1 text-sm"
                 value={tempCustomEnd}
                 onChange={(e) => setTempCustomEnd(e.target.value)}
+                required
               />
               <button
                 onClick={applyCustomRange}
-                className="px-4 py-2 rounded bg-green-500 text-white shadow text-sm"
-                title={t('apply')}
+                disabled={!tempCustomStart || !tempCustomEnd}
+                className={`px-4 py-2 rounded ${!tempCustomStart || !tempCustomEnd 
+                  ? 'bg-gray-300 cursor-not-allowed' 
+                  : 'bg-green-500 hover:bg-green-600'} text-white shadow text-sm`}
+                title={!tempCustomStart || !tempCustomEnd 
+                  ? t('fillDatesFirst') || 'Please select start and end dates' 
+                  : t('apply')}
               >
                 {t('apply')}
               </button>
+              {!customApplied && rangeKey === "custom" && (
+                <div className="w-full mt-2 text-yellow-500 dark:text-yellow-400 text-sm">
+                  ⚠️ {t('applyCustomRangeHint') || 'Select dates and click Apply to view data'}
+                </div>
+              )}
             </div>
           )}
         </div>

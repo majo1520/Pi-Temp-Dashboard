@@ -81,7 +81,29 @@ function useSensorData({
   const getMatchingField = (apiField, targetField) => {
     if (!apiField) return false;
     const apiFieldLower = apiField.toLowerCase();
-    return fieldMapping[targetField]?.some(variant => apiFieldLower.includes(variant.toLowerCase()));
+    
+    // Exact match with the target field
+    if (apiFieldLower === targetField.toLowerCase()) {
+      return true;
+    }
+    
+    // Check against the field mapping for exact matches
+    if (fieldMapping[targetField]) {
+      return fieldMapping[targetField].some(variant => 
+        apiFieldLower === variant.toLowerCase() || 
+        // For partial matches, ensure it's a word boundary to avoid cross-field matches
+        (apiFieldLower.includes(variant.toLowerCase()) && 
+         (apiFieldLower.length === variant.length || 
+          apiFieldLower.indexOf(variant.toLowerCase()) === 0 || 
+          apiFieldLower.indexOf(variant.toLowerCase()) + variant.length === apiFieldLower.length ||
+          /\W/.test(apiFieldLower.charAt(apiFieldLower.indexOf(variant.toLowerCase()) - 1)) || 
+          /\W/.test(apiFieldLower.charAt(apiFieldLower.indexOf(variant.toLowerCase()) + variant.length))
+         )
+        )
+      );
+    }
+    
+    return false;
   };
 
   // Function to extract time-series data for a specific field from various response formats
@@ -465,6 +487,10 @@ function useSensorData({
     if (rangeKey === 'custom' && customApplied) {
       startTime = new Date(customStart).getTime();
       endTime = new Date(customEnd).getTime();
+    } else if (rangeKey === 'custom' && !customApplied) {
+      // Don't fetch if custom range is selected but not applied
+      console.log('Custom range selected but not applied yet. Please select dates and click Apply.');
+      return;
     } else {
       endTime = Date.now();
       startTime = endTime + fluxMs;
@@ -504,7 +530,10 @@ function useSensorData({
             const fieldData = locationData.filter(d => {
               const fieldMatch = d.field === field || getMatchingField(d.field, field);
               if (!fieldMatch) {
-                console.log('Field mismatch:', { expected: field, got: d.field });
+                // Use debug level logging instead of console.log to reduce console spam
+                if (typeof console.debug === 'function') {
+                  console.debug(`Field mismatch: expected '${field}', got '${d.field}'`);
+                }
               }
               return fieldMatch;
             });
