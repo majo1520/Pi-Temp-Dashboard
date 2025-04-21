@@ -54,7 +54,7 @@ The system consists of the following integrated components:
 - [Performance Optimization](docs/PERFORMANCE_OPTIMIZATION.md) - Detailed overview of implemented performance optimizations
 - [User Roles & Permissions](docs/USER_ROLES.md) - Complete guide to the role-based access control system
 - [Database Documentation](docs/DATABASE.md) - Detailed information about SQLite implementation and database schema
-- [Architecture](docs/ARCHITECTURE.png) - Interactive HTML visualization of the system architecture
+- [Architecture](docs/ARCHITECTURE.png) - Visualization of the system architecture
 
 ## Screenshots
 
