@@ -222,5 +222,6 @@
   "fillDatesFirst": "Please select start and end dates first",
   "applyCustomRangeHint": "Select dates and click Apply to view data",
   "customRangeError": "When using custom range, you must specify start and end dates and click Apply",
-  "customRangeInvalidDates": "The selected date range is invalid. The start date must be before the end date."
+  "customRangeInvalidDates": "The selected date range is invalid. The start date must be before the end date.",
+  "allDatabase": "Entire database"
 } 

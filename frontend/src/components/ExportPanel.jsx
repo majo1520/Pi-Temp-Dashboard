@@ -48,6 +48,16 @@ export default function ExportPanel({ t }) {
         modifiedStart = '-30d';
       }
 
+      // Check for current content type header
+      const headers = {
+        Accept: format === "json" 
+          ? "application/json" 
+          : format === "lp" 
+            ? "text/plain" 
+            : "text/csv",
+      };
+
+      // Make the request
       const response = await axios.get("/api/export", {
         params: {
           field,
@@ -58,59 +68,30 @@ export default function ExportPanel({ t }) {
           t: Date.now(),
         },
         responseType: "blob",
-        headers: {
-          Accept:
-            format === "json"
-              ? "application/json"
-              : format === "lp"
-              ? "text/plain"
-              : "text/csv",
-        },
+        headers
       });
 
-      const fileType =
-        format === "json"
-          ? "application/json"
-          : format === "lp"
-          ? "text/plain"
-          : "text/csv";
-
-      const fileExtension = format === "lp" ? "lp" : format;
-
-      // Create the correct blob depending on the format
-      let blob;
+      // Determine if the response is a ZIP file
+      const contentType = response.headers["content-type"] || "";
+      const isZip = contentType.includes("application/zip") || 
+                   (await isZipFile(response.data));
       
-      if (format === "json") {
-        // Check if response is a ZIP file (server sends ZIP for large data)
-        const isZip = await isZipFile(response.data);
+      let blob = response.data;
+      let fileExtension = format === "lp" ? "lp" : format;
+      
+      // If it's a ZIP file for JSON format, alert the user
+      if (isZip && format === "json") {
+        alert(t ? t('jsonExportTooLarge') : 
+          "Výsledok je príliš veľký pre JSON. Dáta boli limitované na posledných 30 dní. Pre väčšie dátové sady použite CSV alebo LP formát.");
         
-        if (isZip) {
-          // Handle ZIP file - notify user that we're limiting the data
-          alert(t ? t('jsonExportTooLarge') : 
-            "Výsledok je príliš veľký pre JSON. Dáta boli limitované na posledných 30 dní. Pre väčšie dátové sady použite CSV alebo LP formát.");
-            
-          // Retry with a more limited date range
-          setLoading(false);
-          return;
-        }
-        
-        // Process regular JSON response
-        const textContent = await response.data.text();
-        
-        try {
-          // Try to parse it as JSON to ensure it's valid
-          const jsonData = JSON.parse(textContent);
-          // Create a properly formatted JSON blob with indentation for readability
-          blob = new Blob([JSON.stringify(jsonData, null, 2)], {
-            type: fileType,
-          });
-        } catch (jsonError) {
-          console.warn("JSON parsing error, using raw text", jsonError);
-          blob = new Blob([textContent], { type: fileType });
-        }
-      } else {
-        // For CSV and LP formats, use response data directly
-        blob = new Blob([response.data], { type: fileType });
+        // Retry with a more limited date range
+        setLoading(false);
+        return;
+      }
+      
+      // If it's a ZIP file for LP or CSV, use zip extension
+      if (isZip) {
+        fileExtension = "zip";
       }
 
       // Format location name for filename (replace spaces with underscores)
@@ -180,7 +161,8 @@ export default function ExportPanel({ t }) {
           >
             {RANGE_OPTIONS.map((r) => (
               <option key={r} value={r}>
-                {r === 'custom' && t ? t('custom') : r}
+                {r === 'custom' && t ? t('custom') : 
+                 r === 'celá databáza' && t ? t('allDatabase') || 'Entire database' : r}
               </option>
             ))}
           </select>

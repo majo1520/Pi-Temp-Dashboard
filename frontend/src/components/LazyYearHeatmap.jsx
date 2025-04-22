@@ -1,5 +1,8 @@
-import { useState } from "react";
-import CalendarHeatmapChart from "../CalendarHeatmapChart";
+import { useState, lazy, Suspense } from "react";
+import LoadingIndicator from "./LoadingIndicator";
+
+// Lazy loaded component
+const CalendarHeatmapChart = lazy(() => import("../CalendarHeatmapChart"));
 
 // Default thresholds to prevent errors with null values
 const DEFAULT_THRESHOLDS = {
@@ -35,7 +38,9 @@ function LazyYearHeatmap({ year, data, thresholds = DEFAULT_THRESHOLDS, fixedDay
       {isExpanded ? (
         isLoaded ? (
           data && data.length > 0 ? (
-            <CalendarHeatmapChart data={data} startDate={`${year}-01-01`} thresholds={safeThresholds} fixedDays={fixedDays} />
+            <Suspense fallback={<LoadingIndicator text={`Loading ${year} heatmap...`} />}>
+              <CalendarHeatmapChart data={data} startDate={`${year}-01-01`} thresholds={safeThresholds} fixedDays={fixedDays} />
+            </Suspense>
           ) : (
             <div className="p-4 text-center text-gray-500">No data</div>
           )

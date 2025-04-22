@@ -217,10 +217,11 @@
   "showInLocationList": "Zobraziť v zozname lokalít",
   "showSensorCard": "Zobraziť kartu",
   "locationVisibilityTooltip": "Prepínač pre zobrazenie/skrytie lokácie v hlavnom zozname",
-  "cardVisibilityTooltip": "Prepínač pre zobrazenie karty senzora",
+  "cardVisibilityTooltip": "Prepínač pre zobrazenie tejto karty senzora",
   "defaultSelectionSaved": "Predvolený výber bol úspešne uložený",
-  "fillDatesFirst": "Najprv vyplňte dátumy začiatku a konca",
-  "applyCustomRangeHint": "Vyberte dátumy a kliknite na 'Použiť' pre zobrazenie údajov",
-  "customRangeError": "Pri použití vlastného rozsahu musíte zadať dátumy začiatku a konca a kliknúť na Použiť",
-  "customRangeInvalidDates": "Vybraný časový rozsah je neplatný. Dátum začiatku musí byť pred dátumom konca."
+  "fillDatesFirst": "Prosím, najprv vyberte dátum začiatku a konca",
+  "applyCustomRangeHint": "Vyberte dátumy a kliknite na Použiť pre zobrazenie údajov",
+  "customRangeError": "Pri použití vlastného časového rozsahu musíte zadať dátum začiatku a konca a kliknúť na tlačidlo Použiť",
+  "customRangeInvalidDates": "Vybraný časový rozsah je neplatný. Dátum začiatku musí byť pred dátumom konca.",
+  "allDatabase": "Celá databáza"
 } 
