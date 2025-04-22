@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48px" height="48px" viewBox="0 0 48 48" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <title>Thermometer Icon</title>
+  <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+    <circle fill="#FF5A5A" cx="24" cy="34" r="8"></circle>
+    <path d="M24,6 L24,34" stroke="#333333" stroke-width="4" stroke-linecap="round"></path>
+    <path d="M28,6 C28,3.790861 26.209139,2 24,2 C21.790861,2 20,3.790861 20,6 L20,28 C17.238576,29.3333333 16,31.6666667 16,35 C16,40.5228475 19.5817218,44 24,44 C28.4182782,44 32,40.5228475 32,35 C32,31.6666667 30.761424,29.3333333 28,28 L28,6 Z" stroke="#333333" stroke-width="2"></path>
+    <path d="M20,14 L24,14" stroke="#333333" stroke-width="2" stroke-linecap="round"></path>
+    <path d="M20,20 L24,20" stroke="#333333" stroke-width="2" stroke-linecap="round"></path>
+    <path d="M20,26 L24,26" stroke="#333333" stroke-width="2" stroke-linecap="round"></path>
+  </g>
+</svg> 
