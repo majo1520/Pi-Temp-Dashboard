@@ -13,6 +13,14 @@ import './i18n';
 import './utils/toggleLogs';
 import logger from './utils/logger';
 
+// Import and initialize fetch interceptor for error suppression
+import { initFetchInterceptor } from './utils/fetchInterceptor';
+initFetchInterceptor();
+
+// Import and initialize console interceptor
+import { initConsoleInterceptor } from './utils/consoleInterceptor';
+initConsoleInterceptor();
+
 // Set future flags to silence warnings
 // This needs to be done before any Router related components are rendered
 window.__reactRouterVersion = { major: 6, minor: 21, patch: 3 };

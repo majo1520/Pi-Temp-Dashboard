@@ -15,6 +15,7 @@ Configuration is loaded from sensor_config.ini file and includes:
     - Sensor settings
     - Topic configuration
     - Data validation ranges
+    - Logging configuration
 """
 
 import time
@@ -35,36 +36,6 @@ import uuid
 import os
 from collections import deque
 
-
-# --- Setup logging with rotation ---
-# Configure root logger
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
-
-# Remove any existing handlers
-for handler in logging.root.handlers[:]:
-    logging.root.removeHandler(handler)
-
-# Create rotating file handler
-file_handler = RotatingFileHandler(
-    "bme280_errors.log",
-    maxBytes=10485760,  # 10MB
-    backupCount=5  # Keep 5 backup logs
-)
-file_handler.setLevel(logging.ERROR)
-file_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
-file_handler.setFormatter(file_formatter)
-logging.root.addHandler(file_handler)
-
-# Add console handler for important messages
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
-logging.root.addHandler(console_handler)
 
 # Load configuration
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sensor_config.ini')
@@ -117,8 +88,26 @@ def create_default_config():
             'max_size': '1000',
             'flush_on_each_cycle': 'true'
         }
+        config['logging'] = {
+            'log_level': 'INFO',
+            'file_logging': 'true',
+            'log_file': 'bme280_publisher.log',
+            'max_log_size': '10485760',
+            'backup_count': '5',
+            'console_logging': 'false',
+            'log_format': '%(asctime)s [%(levelname)s] %(message)s',
+            'date_format': '%Y-%m-%d %H:%M:%S',
+            'separate_error_log': 'true',
+            'error_log_file': 'bme280_errors.log'
+        }
         with open(CONFIG_FILE, 'w') as f:
             config.write(f)
+        # Initialize basic logging to report config creation
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        )
         logging.info(f"Created default configuration file: {CONFIG_FILE}")
 
 create_default_config()
@@ -126,6 +115,87 @@ create_default_config()
 # Load configuration
 config = configparser.ConfigParser()
 config.read(CONFIG_FILE)
+
+# Setup logging based on configuration
+def setup_logging():
+    # Get logging configuration
+    log_level_str = config.get('logging', 'log_level', fallback='INFO')
+    file_logging = config.getboolean('logging', 'file_logging', fallback=True)
+    log_file = config.get('logging', 'log_file', fallback='bme280_publisher.log')
+    max_log_size = config.getint('logging', 'max_log_size', fallback=10485760)
+    backup_count = config.getint('logging', 'backup_count', fallback=5)
+    console_logging = config.getboolean('logging', 'console_logging', fallback=False)
+    log_format = config.get('logging', 'log_format', fallback='%(asctime)s [%(levelname)s] %(message)s')
+    date_format = config.get('logging', 'date_format', fallback='%Y-%m-%d %H:%M:%S')
+    separate_error_log = config.getboolean('logging', 'separate_error_log', fallback=True)
+    error_log_file = config.get('logging', 'error_log_file', fallback='bme280_errors.log')
+    
+    # Convert string log level to logging constant
+    log_level_map = {
+        'DEBUG': logging.DEBUG,
+        'INFO': logging.INFO,
+        'WARNING': logging.WARNING,
+        'ERROR': logging.ERROR,
+        'CRITICAL': logging.CRITICAL
+    }
+    log_level = log_level_map.get(log_level_str.upper(), logging.INFO)
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    
+    # Remove any existing handlers
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # Create formatters
+    formatter = logging.Formatter(log_format, date_format)
+    
+    # Add handlers based on configuration
+    if file_logging:
+        # Ensure log directory exists if log file has a directory path
+        log_dir = os.path.dirname(log_file)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+            
+        # Create main log file handler
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=max_log_size,
+            backupCount=backup_count
+        )
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+        
+        # Create separate error log file if enabled
+        if separate_error_log:
+            # Ensure error log directory exists
+            error_log_dir = os.path.dirname(error_log_file)
+            if error_log_dir and not os.path.exists(error_log_dir):
+                os.makedirs(error_log_dir)
+                
+            error_handler = RotatingFileHandler(
+                error_log_file,
+                maxBytes=max_log_size,
+                backupCount=backup_count
+            )
+            error_handler.setLevel(logging.ERROR)
+            error_handler.setFormatter(formatter)
+            root_logger.addHandler(error_handler)
+    
+    # Add console handler if enabled
+    if console_logging:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(log_level)
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
+    
+    logging.info("Logging initialized with level: %s, file: %s, console: %s", 
+                log_level_str, file_logging, console_logging)
+
+# Initialize logging
+setup_logging()
 
 # MQTT Configuration
 MQTT_HOST = config.get('mqtt', 'host', fallback='localhost')

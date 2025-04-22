@@ -1,7 +1,7 @@
 /**
  * Enhanced logging utility with aggregation, rotation, and performance metrics
  */
-import { isLogsEnabled } from './toggleLogs';
+import { isLogsEnabled, shouldShowLogType, shouldSuppressAuthErrors } from './toggleLogs';
 
 // Constants for log management
 const MAX_LOG_SIZE = 1000;
@@ -15,6 +15,7 @@ class EnhancedLogger {
     this.aggregatedMetrics = new Map();
     this.performanceMetrics = new Map();
     this.enabled = isLogsEnabled();
+    this.suppressAuthErrors = shouldSuppressAuthErrors();
     
     // Initialize rotation
     this.setupRotation();
@@ -67,12 +68,12 @@ class EnhancedLogger {
 
   // Performance measurement
   startPerformanceMeasure(label) {
-    if (!this.enabled) return;
+    if (!shouldShowLogType('log')) return;
     this.performanceMarks.set(label, performance.now());
   }
 
   endPerformanceMeasure(label, category = 'default') {
-    if (!this.enabled || !this.performanceMarks.has(label)) return;
+    if (!shouldShowLogType('log') || !this.performanceMarks.has(label)) return;
     
     const startTime = this.performanceMarks.get(label);
     const duration = performance.now() - startTime;
@@ -96,7 +97,7 @@ class EnhancedLogger {
 
   // Basic logging methods with enhanced context
   log(...args) {
-    if (!this.enabled) return;
+    if (!shouldShowLogType('log')) return;
     
     const logEntry = this.createLogEntry('log', args);
     this.logs.push(logEntry);
@@ -104,7 +105,7 @@ class EnhancedLogger {
   }
 
   info(...args) {
-    if (!this.enabled) return;
+    if (!shouldShowLogType('info')) return;
     
     const logEntry = this.createLogEntry('info', args);
     this.logs.push(logEntry);
@@ -112,7 +113,7 @@ class EnhancedLogger {
   }
 
   warn(...args) {
-    if (!this.enabled) return;
+    if (!shouldShowLogType('warn')) return;
     
     const logEntry = this.createLogEntry('warn', args);
     this.logs.push(logEntry);
@@ -120,18 +121,58 @@ class EnhancedLogger {
   }
 
   error(...args) {
-    // Always log errors
+    // Check if this is an auth error that should be suppressed
+    if (this.suppressAuthErrors && this.isAuthError(args)) {
+      return;
+    }
+    
+    // Only log errors if they should be shown based on settings
+    if (!shouldShowLogType('error')) return;
+    
     const logEntry = this.createLogEntry('error', args);
     this.logs.push(logEntry);
     console.error(...args);
   }
 
   debug(...args) {
-    if (!this.enabled || process.env.NODE_ENV === 'production') return;
+    if (!shouldShowLogType('debug')) return;
     
     const logEntry = this.createLogEntry('debug', args);
     this.logs.push(logEntry);
     console.debug(...args);
+  }
+  
+  /**
+   * Check if an error is an authentication error (401 Unauthorized)
+   * @param {Array} args - The arguments passed to the error method
+   * @returns {boolean} - Whether this is an auth error
+   */
+  isAuthError(args) {
+    // Check for HTTP 401 patterns
+    for (const arg of args) {
+      if (typeof arg === 'string') {
+        if (arg.includes('401') && (
+          arg.includes('Unauthorized') || 
+          arg.toLowerCase().includes('auth') ||
+          arg.includes('login')
+        )) {
+          return true;
+        }
+      } else if (arg && typeof arg === 'object') {
+        // Check for HTTP response or error objects
+        if (arg.status === 401 || 
+            (arg.message && typeof arg.message === 'string' && arg.message.includes('401'))) {
+          return true;
+        }
+        
+        // Check deeper for fetch responses or other error structures
+        if (arg.response && arg.response.status === 401) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
   }
 
   // Create structured log entry

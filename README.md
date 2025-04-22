@@ -55,6 +55,7 @@ The system consists of the following integrated components:
 - [User Roles & Permissions](docs/USER_ROLES.md) - Complete guide to the role-based access control system
 - [Database Documentation](docs/DATABASE.md) - Detailed information about SQLite implementation and database schema
 - [Architecture](docs/ARCHITECTURE.png) - Visualization of the system architecture
+- [Logging System](docs/LOGGING.md) - Documentation for the frontend and backend logging system
 
 ## Screenshots
 
@@ -283,6 +284,24 @@ humidity_min = 0
 humidity_max = 100
 pressure_min = 300
 pressure_max = 1100
+
+[logging]
+# Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+log_level = INFO
+# Enable logging to file
+file_logging = true
+# Log file path
+log_file = bme280_publisher.log
+# Maximum log file size in bytes (10MB default)
+max_log_size = 10485760
+# Number of backup log files to keep
+backup_count = 5
+# Enable console logging (default is false)
+console_logging = false
+# Use a separate file for error logs
+separate_error_log = true
+# Error log file path
+error_log_file = bme280_errors.log
 EOF
 ```
 
@@ -400,7 +419,14 @@ The dashboard includes an advanced logging system with the following features:
    - Monitor export operations
    - Record most viewed chart types
 
-To enable detailed logging, set `ENABLE_ADVANCED_LOGGING=true` in your backend `.env` file.
+4. **Console Logging Control**
+   - Configure console output levels (ALL, ERRORS_ONLY, NONE)
+   - Suppress authentication errors
+   - Runtime control via browser console commands
+
+To enable detailed logging, set `ENABLE_ADVANCED_LOGGING=true` in your backend `.env` file and configure frontend logging via environment variables.
+
+For complete documentation on the logging system, see [Logging Documentation](docs/LOGGING.md).
 
 ### Threshold Configuration
 
@@ -418,6 +444,9 @@ Access the dashboard settings to configure thresholds for temperature, humidity,
 - **Publisher won't start**: Check I2C connection with `i2cdetect -y 1`. Verify address matches in config.
 - **No data in MQTT**: Run `mosquitto_sub -t "senzory/#" -v` to monitor MQTT messages.
 - **Invalid readings**: Check sensor placement (avoid heat sources, direct sunlight).
+- **Checking logs**: Review `bme280_publisher.log` for general logs and `bme280_errors.log` for error details.
+- **Enable console output**: Set `console_logging = true` in the `[logging]` section of `sensor_config.ini` to see output in the terminal.
+- **Debug mode**: For more detailed logs, set `log_level = DEBUG` in the configuration file.
 
 ### Backend
 
