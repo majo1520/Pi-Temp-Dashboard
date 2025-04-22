@@ -28,6 +28,29 @@ const { users, locationColors, userSettings, closeDatabase, resetUserPassword } 
 const cache = require('./cache.cjs');
 const { createQueue } = require('./queue.cjs');
 
+// Configurable logging utility
+const logger = {
+  // Possible values: 'ALL', 'ERROR', 'NONE'
+  level: (process.env.LOGGING_LEVEL || 'ALL').toUpperCase(),
+  
+  log: function(...args) {
+    if (this.level === 'ALL') {
+      logger.log(...args);
+    }
+  },
+  
+  error: function(...args) {
+    if (this.level === 'ALL' || this.level === 'ERROR') {
+      logger.error(...args);
+    }
+  },
+  
+  // Always log regardless of configuration (for critical messages)
+  always: function(...args) {
+    logger.log(...args);
+  }
+};
+
 // Initialize async components
 let exportQueue = null;
 
@@ -42,7 +65,7 @@ async function initializeAsyncComponents() {
     if (exportQueue) {
       // Register processor function
       exportQueue.registerProcessor && exportQueue.registerProcessor(async (jobData) => {
-        console.log(`Processing export job: ${jobData.type}`);
+        logger.log(`Processing export job: ${jobData.type}`);
         // Perform the export operation here
         const { type, locations, range, filename } = jobData;
         
@@ -53,7 +76,7 @@ async function initializeAsyncComponents() {
       });
     }
   } catch (error) {
-    console.error('Error initializing async components:', error);
+    logger.error('Error initializing async components:', error);
   }
 }
 
@@ -76,6 +99,15 @@ const RATE_LIMIT_MAX_REQUESTS = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) ||
 const CORS_ALLOWED_ORIGINS = process.env.CORS_ALLOWED_ORIGINS ? 
   process.env.CORS_ALLOWED_ORIGINS.split(',') : 
   ['http://localhost:5173', 'http://192.168.155.206:5000', 'http://192.168.155.206'];
+const LOGGING_LEVEL = (process.env.LOGGING_LEVEL || 'ALL').toUpperCase(); // Logging level: ALL, ERROR, NONE
+
+// Log configuration at startup (will only show if logging is enabled)
+logger.log('Server configuration loaded:');
+logger.log(`- Logging level: ${LOGGING_LEVEL}`);
+logger.log(`- InfluxDB: ${INFLUX_URL}`);
+logger.log(`- Org: ${ORG}`);
+logger.log(`- Bucket: ${BUCKET}`);
+logger.log(`- Rate limiting: ${ENABLE_RATE_LIMITING ? 'Enabled' : 'Disabled'}`);
 
 // Body parsing middleware
 app.use(express.json());
@@ -257,7 +289,7 @@ app.post("/api/import-lp", upload.single("lpfile"), async (req, res) => {
 
     return res.status(200).send("Import line-protocol prebehol úspešne.");
   } catch (err) {
-    console.error("Chyba pri importe line-protocol:", err);
+    logger.error("Chyba pri importe line-protocol:", err);
     return res.status(500).send("Chyba pri importe line-protocol.");
   }
 });
@@ -266,9 +298,9 @@ app.post("/api/import-lp", upload.single("lpfile"), async (req, res) => {
 let sensorVisibility = {};
 if (fs.existsSync(VISIBILITY_FILE)) {
   sensorVisibility = JSON.parse(fs.readFileSync(VISIBILITY_FILE));
-  console.log("Načítaná uložená visibility konfigurácia.");
+  logger.log("Načítaná uložená visibility konfigurácia.");
 } else {
-  console.log("Žiadne uložené visibility na disku.");
+  logger.log("Žiadne uložené visibility na disku.");
 }
 
 // Load default cards from settings.json
@@ -277,9 +309,9 @@ let defaultSettings = { defaultCards: [] };
 if (fs.existsSync(SETTINGS_FILE)) {
   try {
     defaultSettings = JSON.parse(fs.readFileSync(SETTINGS_FILE));
-    console.log("Načítané nastavenia zo settings.json");
+    logger.log("Načítané nastavenia zo settings.json");
   } catch (err) {
-    console.error("Chyba pri načítaní settings.json:", err);
+    logger.error("Chyba pri načítaní settings.json:", err);
   }
 }
 
@@ -504,7 +536,7 @@ async function getActualStartTimeFromInflux(name) {
     // Get the timestamp after the gap (which is the restart time)
     return dataLine[timeIndex];
   } catch (error) {
-    console.error(`Error getting actual start time for ${name}:`, error);
+    logger.error(`Error getting actual start time for ${name}:`, error);
     return null;
   }
 }
@@ -538,7 +570,7 @@ app.post('/api/add-location', async (req, res) => {
     await addLocationToInflux(location);
     res.status(200).send('Lokácia bola pridaná.');
   } catch (err) {
-    console.error('Chyba pri pridávaní lokácie do InfluxDB:', err);
+    logger.error('Chyba pri pridávaní lokácie do InfluxDB:', err);
     res.status(500).send('Chyba pri pridávaní lokácie');
   }
 });
@@ -556,7 +588,7 @@ app.get('/api/sensors/:name/history', async (req, res) => {
   const startTime = req.query.start;
   const stopTime = req.query.stop;
   
-  console.log('Historical data request:', {
+  logger.log('Historical data request:', {
     sensorName,
     range,
     fields,
@@ -582,7 +614,7 @@ app.get('/api/sensors/:name/history', async (req, res) => {
   const cachedData = await cache.get(cacheKey);
   
   if (cachedData) {
-    console.log(`Cache hit for ${cacheKey}`);
+    logger.log(`Cache hit for ${cacheKey}`);
     return res.json(cachedData);
   }
   
@@ -619,7 +651,7 @@ app.get('/api/sensors/:name/history', async (req, res) => {
         |> aggregateWindow(every: ${downsample}, fn: ${aggregateFunction}, createEmpty: ${includeEmptyWindows ? 'true' : 'false'})
         |> sort(columns: ["_time"])`;
       
-      console.log(`Using downsampled query with aggregation window: ${downsample}, createEmpty: ${includeEmptyWindows}, function: ${aggregateFunction}`);
+      logger.log(`Using downsampled query with aggregation window: ${downsample}, createEmpty: ${includeEmptyWindows}, function: ${aggregateFunction}`);
     } else {
       // For large ranges with no downsampling specified, we should add a limit to prevent overwhelming the client
       // Only add a limit for non-aggregated queries on large ranges
@@ -634,10 +666,10 @@ app.get('/api/sensors/:name/history', async (req, res) => {
         |> filter(fn: (r) => contains(value: r["_field"], set: [${fields.map(f => `"${f}"`).join(',')}]))
         |> sort(columns: ["_time"])${isLargeRange ? '\n        |> limit(n: 5000)' : ''}`;
       
-      console.log(`Using standard query ${isLargeRange ? 'with limit' : 'without downsampling'}`);
+      logger.log(`Using standard query ${isLargeRange ? 'with limit' : 'without downsampling'}`);
     }
 
-    console.log('Executing InfluxDB query:', query);
+    logger.log('Executing InfluxDB query:', query);
     const influxRes = await fetch(`${INFLUX_URL}/api/v2/query?org=${ORG}`, {
       method: 'POST',
       headers: {
@@ -650,14 +682,14 @@ app.get('/api/sensors/:name/history', async (req, res) => {
     
     if (!influxRes.ok) {
       const errorMsg = await influxRes.text();
-      console.error('InfluxDB query error:', errorMsg);
+      logger.error('InfluxDB query error:', errorMsg);
       throw new Error(`InfluxDB error: ${influxRes.statusText}\n${errorMsg}`);
     }
     
     const csvText = await influxRes.text();
-    console.log('InfluxDB response received, parsing CSV...');
+    logger.log('InfluxDB response received, parsing CSV...');
     const jsonData = parseCSVtoJSON(csvText);
-    console.log('Parsed data:', {
+    logger.log('Parsed data:', {
       recordCount: jsonData.length,
       firstRecord: jsonData.length > 0 ? jsonData[0] : null,
       lastRecord: jsonData.length > 0 ? jsonData[jsonData.length - 1] : null
@@ -685,12 +717,12 @@ app.get('/api/sensors/:name/history', async (req, res) => {
       if (range === "30d" || range === "365d") cacheTTL = 3600; // 1 hour
     }
     
-    console.log(`Setting cache TTL: ${cacheTTL} seconds for ${jsonData.length} records`);
+    logger.log(`Setting cache TTL: ${cacheTTL} seconds for ${jsonData.length} records`);
     await cache.set(cacheKey, jsonData, cacheTTL);
     
     res.json(jsonData);
   } catch (err) {
-    console.error("Error fetching historical data:", err);
+    logger.error("Error fetching historical data:", err);
     res.status(500).json({ error: "Error fetching historical data", details: err.message });
   }
 });
@@ -771,7 +803,7 @@ app.get('/api/export', async (req, res) => {
 
     if (!influxRes.ok) {
       const errTxt = await influxRes.text();
-      console.error("Chyba z InfluxDB:", errTxt);
+      logger.error("Chyba z InfluxDB:", errTxt);
       return res.status(500).send("Chyba pri načítaní údajov z InfluxDB.");
     }
 
@@ -885,7 +917,7 @@ app.get('/api/export', async (req, res) => {
       }
     }
   } catch (err) {
-    console.error("Chyba pri exporte:", err);
+    logger.error("Chyba pri exporte:", err);
     res.status(500).send("Interná chyba servera.");
   }
 });
@@ -1020,7 +1052,7 @@ app.post('/api/login', async (req, res) => {
       }
     });
   } catch (err) {
-    console.error("Login error:", err);
+    logger.error("Login error:", err);
     return res.status(500).json({ 
       success: false, 
       message: 'Authentication error. Please try again later.' 
@@ -1056,7 +1088,7 @@ app.get('/api/location-colors', async (req, res) => {
     const colors = await locationColors.getAll();
     res.json(colors);
   } catch (err) {
-    console.error("Error fetching location colors:", err);
+    logger.error("Error fetching location colors:", err);
     res.status(500).json({ error: 'Failed to fetch location colors' });
   }
 });
@@ -1065,7 +1097,7 @@ app.get('/api/location-colors', async (req, res) => {
 app.post('/api/location-colors', async (req, res) => {
   // Check if user is authenticated
   if (!req.session.user) {
-    console.log("Unauthorized attempt to update location colors - no user session");
+    logger.log("Unauthorized attempt to update location colors - no user session");
     return res.status(401).json({ error: 'Authentication required', message: 'You must be logged in to update location colors' });
   }
   
@@ -1076,11 +1108,11 @@ app.post('/api/location-colors', async (req, res) => {
   }
   
   try {
-    console.log(`User ${req.session.user.username} (${req.session.user.email}) updating location colors:`, newColors);
+    logger.log(`User ${req.session.user.username} (${req.session.user.email}) updating location colors:`, newColors);
     const result = await locationColors.update(newColors);
     res.json(result);
   } catch (err) {
-    console.error("Error updating location colors:", err);
+    logger.error("Error updating location colors:", err);
     res.status(500).json({ error: 'Failed to update location colors' });
   }
 });
@@ -1109,7 +1141,7 @@ app.get('/api/users', async (req, res) => {
     const userList = await users.list();
     res.json(userList);
   } catch (err) {
-    console.error("Error listing users:", err);
+    logger.error("Error listing users:", err);
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
@@ -1135,7 +1167,7 @@ app.post('/api/users', async (req, res) => {
       roles: newUser.roles
     });
   } catch (err) {
-    console.error("Error creating user:", err);
+    logger.error("Error creating user:", err);
     if (err.message.includes('UNIQUE constraint failed')) {
       return res.status(409).json({ error: 'Username or email already exists' });
     }
@@ -1184,7 +1216,7 @@ app.put('/api/users/:id', async (req, res) => {
       roles: updatedUser.roles
     });
   } catch (err) {
-    console.error("Error updating user:", err);
+    logger.error("Error updating user:", err);
     if (err.message.includes('UNIQUE constraint failed')) {
       return res.status(409).json({ error: 'Username or email already exists' });
     }
@@ -1209,7 +1241,7 @@ app.delete('/api/users/:id', async (req, res) => {
     const result = await users.delete(parseInt(id));
     res.json(result);
   } catch (err) {
-    console.error("Error deleting user:", err);
+    logger.error("Error deleting user:", err);
     res.status(500).json({ error: 'Failed to delete user' });
   }
 });
@@ -1242,7 +1274,7 @@ app.get('/api/sensors', async (req, res) => {
     
     res.json(sensorObjects);
   } catch (err) {
-    console.error("Chyba pri načítavaní senzorov:", err);
+    logger.error("Chyba pri načítavaní senzorov:", err);
     res.status(500).json({ error: "Chyba pri čítaní InfluxDB" });
   }
 });
@@ -1296,7 +1328,7 @@ app.get('/api/sensors/status', async (req, res) => {
     );
     res.json(statuses);
   } catch (err) {
-    console.error("Chyba pri získavaní statusov:", err);
+    logger.error("Chyba pri získavaní statusov:", err);
     res.status(500).json({ error: "Chyba pri získavaní statusov" });
   }
 });
@@ -1373,7 +1405,7 @@ app.post("/api/delete-location", async (req, res) => {
 
     res.status(200).send(`Lokácia '${location}' bola zmazaná.`);
   } catch (err) {
-    console.error("Chyba pri mazaní lokácie:", err);
+    logger.error("Chyba pri mazaní lokácie:", err);
     res.status(500).send("Chyba pri mazaní lokácie.");
   }
 });
@@ -1390,7 +1422,7 @@ app.get('/api/user-settings', async (req, res) => {
     const settings = await userSettings.getAll(req.session.user.id);
     res.json(settings);
   } catch (err) {
-    console.error("Error fetching user settings:", err);
+    logger.error("Error fetching user settings:", err);
     res.status(500).json({ error: 'Failed to fetch user settings' });
   }
 });
@@ -1411,7 +1443,7 @@ app.get('/api/user-settings/:key', async (req, res) => {
     }
     res.json({ [key]: value });
   } catch (err) {
-    console.error(`Error fetching user setting ${key}:`, err);
+    logger.error(`Error fetching user setting ${key}:`, err);
     res.status(500).json({ error: 'Failed to fetch user setting' });
   }
 });
@@ -1431,11 +1463,11 @@ app.post('/api/user-settings/:key', async (req, res) => {
   }
   
   try {
-    console.log(`User ${req.session.user.username} (ID: ${req.session.user.id}) updating setting ${key}`);
+    logger.log(`User ${req.session.user.username} (ID: ${req.session.user.id}) updating setting ${key}`);
     const result = await userSettings.set(req.session.user.id, key, value);
     res.json(result);
   } catch (err) {
-    console.error(`Error updating user setting ${key}:`, err);
+    logger.error(`Error updating user setting ${key}:`, err);
     res.status(500).json({ error: 'Failed to update user setting' });
   }
 });
@@ -1453,7 +1485,7 @@ app.delete('/api/user-settings/:key', async (req, res) => {
     const result = await userSettings.delete(req.session.user.id, key);
     res.json(result);
   } catch (err) {
-    console.error(`Error deleting user setting ${key}:`, err);
+    logger.error(`Error deleting user setting ${key}:`, err);
     res.status(500).json({ error: 'Failed to delete user setting' });
   }
 });
@@ -1479,26 +1511,26 @@ app.post('/api/users/:id/reset-password', isAuthenticated, isAdmin, (req, res) =
   const { id } = req.params;
   const { newPassword } = req.body;
   
-  console.log(`Password reset attempt for user ID ${id} by admin ${req.session.user.username} (ID: ${req.session.user.id})`);
+  logger.log(`Password reset attempt for user ID ${id} by admin ${req.session.user.username} (ID: ${req.session.user.id})`);
   
   if (!newPassword) {
-    console.error('Password reset failed: No password provided');
+    logger.error('Password reset failed: No password provided');
     return res.status(400).json({ error: 'New password is required' });
   }
   
   if (newPassword.length < 8) {
-    console.error('Password reset failed: Password too short');
+    logger.error('Password reset failed: Password too short');
     return res.status(400).json({ error: 'Password must be at least 8 characters long' });
   }
   
   // Use the resetUserPassword function with Promise handling
   resetUserPassword(parseInt(id), newPassword)
     .then(result => {
-      console.log(`Password reset successful for user ID ${id}`);
+      logger.log(`Password reset successful for user ID ${id}`);
       return res.json(result);
     })
     .catch(error => {
-      console.error(`Password reset function error: ${error.message}`);
+      logger.error(`Password reset function error: ${error.message}`);
       return res.status(500).json({ error: error.message || 'Failed to reset password' });
     });
 });
@@ -1551,7 +1583,7 @@ app.use(express.static(staticPath));
 // Use a regex to match any path starting with /admin
 app.use(/^\/admin($|\/)/, (req, res, next) => {
   if (!req.session.user) {
-    console.log(`Unauthorized access attempt to admin area: ${req.path}`);
+    logger.log(`Unauthorized access attempt to admin area: ${req.path}`);
     return res.redirect('/login');
   }
   next();
@@ -1574,7 +1606,7 @@ app.use((req, res) => {
 // ================== SERVER STARTUP ==================
 const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server beží na porte ${PORT}`);
+  logger.always(`Server beží na porte ${PORT}`);
 });
 
 // Keep the process alive
@@ -1584,10 +1616,10 @@ process.stdin.resume();
 let shuttingDown = false;
 
 process.on('SIGINT', () => {
-  console.log('SIGINT received. Use Ctrl+C again to force exit.');
+  logger.always('SIGINT received. Use Ctrl+C again to force exit.');
   
   if (shuttingDown) {
-    console.log('Forcing exit...');
+    logger.always('Forcing exit...');
     process.exit(0);
   }
   
@@ -1600,20 +1632,20 @@ process.on('SIGINT', () => {
 });
 
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received. Server will continue running.');
+  logger.always('SIGTERM received. Server will continue running.');
 });
 
 async function gracefulShutdown() {
-  console.log('Closing database connection...');
+  logger.always('Closing database connection...');
   try {
     await closeDatabase();
-    console.log('Database connection closed successfully');
+    logger.always('Database connection closed successfully');
     server.close(() => {
-      console.log('Server closed successfully');
+      logger.always('Server closed successfully');
       // Don't call process.exit(0) here to prevent automatic shutdown
     });
   } catch (error) {
-    console.error('Error during graceful shutdown:', error);
+    logger.error('Error during graceful shutdown:', error);
     // Don't call process.exit(1) here to prevent automatic shutdown
   }
 }
@@ -1623,13 +1655,13 @@ module.exports = app;
 
 // Add a global error handler for unhandled exceptions
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
+  logger.error('Uncaught Exception:', error);
   // Don't exit - just log the error
 });
 
 // Add a global error handler for unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Promise Rejection:', reason);
+  logger.error('Unhandled Promise Rejection:', reason);
   // Don't exit - just log the error
 });
 
@@ -1661,7 +1693,7 @@ app.get('/api/export/:type', async (req, res) => {
         message: 'Export job has been queued and will be processed shortly'
       });
     } catch (error) {
-      console.error('Error queueing export job:', error);
+      logger.error('Error queueing export job:', error);
       return res.status(500).send('Error starting export process');
     }
   } else {
@@ -1686,7 +1718,7 @@ app.get('/api/export/status/:jobId', async (req, res) => {
       downloadUrl: `/api/exports/${jobId}`
     });
   } catch (error) {
-    console.error('Error checking export status:', error);
+    logger.error('Error checking export status:', error);
     return res.status(500).send('Error checking export status');
   }
 });

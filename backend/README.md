@@ -98,4 +98,54 @@ For production environments, it's recommended to:
 - Always change the default admin password
 - Use strong, randomly generated session secrets
 - In production, enable HTTPS
-- Regularly update dependencies to patch security vulnerabilities 
+- Regularly update dependencies to patch security vulnerabilities
+
+## Configurable Logging
+
+The backend server now includes configurable logging that can be turned on or off via the `.env.production` file.
+
+### Logging Configuration
+
+In the `.env.production` file, set the `LOGGING_LEVEL` variable to one of these values:
+
+- `ALL`: Show all logs (informational messages and errors)
+- `ERROR`: Show only error messages
+- `NONE`: Disable all logging except critical system messages
+
+Example:
+```
+# Logging configuration - options: ALL, ERROR, NONE
+LOGGING_LEVEL=ERROR
+```
+
+### How It Works
+
+The logging system uses a custom logger utility that respects the configured log level:
+
+- `logger.log()` - Used for informational messages (only shown when LOGGING_LEVEL=ALL)
+- `logger.error()` - Used for error messages (shown when LOGGING_LEVEL=ALL or ERROR)
+- `logger.always()` - Used for critical system messages (always shown regardless of LOGGING_LEVEL)
+
+### Updating All Log Calls
+
+If you need to update all console.log calls to use the new logger, run:
+
+```
+node update-logs.js
+```
+
+This script will automatically replace all console.log and console.error calls in server.cjs with the appropriate logger calls.
+
+## Development
+
+To start the server in development mode:
+
+```
+npm run dev
+```
+
+For production:
+
+```
+npm start
+``` 

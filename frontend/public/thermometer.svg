@@ -1,12 +1,15 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg width="48px" height="48px" viewBox="0 0 48 48" version="1.1" xmlns="http://www.w3.org/2000/svg">
-  <title>Thermometer Icon</title>
-  <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
-    <circle fill="#FF5A5A" cx="24" cy="34" r="8"></circle>
-    <path d="M24,6 L24,34" stroke="#333333" stroke-width="4" stroke-linecap="round"></path>
-    <path d="M28,6 C28,3.790861 26.209139,2 24,2 C21.790861,2 20,3.790861 20,6 L20,28 C17.238576,29.3333333 16,31.6666667 16,35 C16,40.5228475 19.5817218,44 24,44 C28.4182782,44 32,40.5228475 32,35 C32,31.6666667 30.761424,29.3333333 28,28 L28,6 Z" stroke="#333333" stroke-width="2"></path>
-    <path d="M20,14 L24,14" stroke="#333333" stroke-width="2" stroke-linecap="round"></path>
-    <path d="M20,20 L24,20" stroke="#333333" stroke-width="2" stroke-linecap="round"></path>
-    <path d="M20,26 L24,26" stroke="#333333" stroke-width="2" stroke-linecap="round"></path>
-  </g>
-</svg> 
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <!-- Thermometer bulb (filled red) -->
+  <circle cx="16" cy="24" r="6" fill="#FF5A5A"/>
+  
+  <!-- Thermometer stem -->
+  <rect x="14" y="5" width="4" height="19" rx="2" fill="#777777"/>
+  
+  <!-- Thermometer outline -->
+  <path d="M16 30C19.3137 30 22 27.3137 22 24C22 21.7909 20.8031 19.8734 19 18.9356V5C19 3.34315 17.6569 2 16 2C14.3431 2 13 3.34315 13 5V18.9356C11.1969 19.8734 10 21.7909 10 24C10 27.3137 12.6863 30 16 30Z" stroke="#333333" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Temperature markers -->
+  <line x1="13" y1="8" x2="16" y2="8" stroke="#333333" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="13" y1="12" x2="16" y2="12" stroke="#333333" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="13" y1="16" x2="16" y2="16" stroke="#333333" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
