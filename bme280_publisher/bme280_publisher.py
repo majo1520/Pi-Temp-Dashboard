@@ -67,7 +67,7 @@ console_handler.setFormatter(formatter)
 logging.root.addHandler(console_handler)
 
 # Load configuration
-CONFIG_FILE = 'sensor_config.ini'
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sensor_config.ini')
 
 # Create default config if it doesn't exist
 def create_default_config():
