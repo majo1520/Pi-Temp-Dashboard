@@ -38,7 +38,7 @@ export default defineConfig(({ mode }) => {
           target: 'http://192.168.155.206:5000', 
           changeOrigin: true,
           secure: false,
-        },
+        }
       },
       host: '0.0.0.0',
     },

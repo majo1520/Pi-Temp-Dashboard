@@ -3,7 +3,8 @@
  */
 
 import config from '../config';
-const API_BASE_URL = '/api';
+// Define API_BASE_URL as a relative path to ensure it works with the proxy
+const API_BASE_URL = config.API_URL;
 
 /**
  * Get all sensors
@@ -648,4 +649,152 @@ export const deleteUser = async (userId) => {
   }
   
   return response.json();
-}; 
+};
+
+/**
+ * Get Telegram notification settings
+ * @returns {Promise<Object>} - Telegram settings
+ */
+export async function getTelegramSettings() {
+  const response = await fetch('/api/notifications/telegram/settings', {
+    credentials: 'include'
+  });
+  if (!response.ok) {
+    throw new Error('Failed to fetch Telegram settings');
+  }
+  return response.json();
+}
+
+/**
+ * Update Telegram notification settings
+ * @param {Object} settings - Telegram settings
+ * @param {string} settings.chatId - Telegram chat ID
+ * @param {boolean} settings.enabled - Global enabled state for notifications
+ * @param {number} settings.notificationFrequency - How often to check and send notifications (in minutes)
+ * @param {string} settings.notificationLanguage - Language for notifications ('en' or 'sk')
+ * @param {boolean} settings.sendCharts - Whether to include charts in notifications
+ * @param {Object} settings.thresholds - Threshold settings by location
+ * @returns {Promise<Object>} - Updated settings
+ */
+export async function updateTelegramSettings(settings) {
+  const response = await fetch('/api/notifications/telegram/settings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify(settings),
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to update Telegram settings: ${error}`);
+  }
+  
+  return response.json();
+}
+
+/**
+ * Send a test Telegram notification
+ * @param {string} chatId - Telegram chat ID to test
+ * @returns {Promise<Object>} - Response data
+ */
+export async function testTelegramNotification(chatId) {
+  const response = await fetch('/api/notifications/telegram/test', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({ chatId }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to send test notification: ${error}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Send a Telegram notification when thresholds are exceeded
+ * @param {Object} data - Notification data
+ * @param {string} data.location - Location name
+ * @param {number} data.temperature - Current temperature
+ * @param {number} data.humidity - Current humidity
+ * @param {number} data.pressure - Current pressure
+ * @param {Object} data.thresholds - Threshold values
+ * @returns {Promise<Object>} - Response data
+ */
+export async function sendTelegramNotification(data) {
+  const response = await fetch('/api/notifications/telegram/notify', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to send notification: ${error}`);
+  }
+
+  return await response.json();
+}
+
+/**
+ * Get all unique sensor locations for dropdown selection
+ * @returns {Promise<Array<string>>} - Array of location names
+ */
+export async function getUniqueLocations() {
+  const sensors = await getSensors();
+  const locations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
+  return locations;
+}
+
+/**
+ * Send a test chart to Telegram
+ * 
+ * @param {string} chatId - Telegram chat ID
+ * @param {string} type - Chart type (temperature, humidity, pressure)
+ * @param {string} location - Location name
+ * @param {number} timeRangeMinutes - Time range in minutes
+ * @returns {Promise<Object>} - API response
+ */
+export async function sendTestChart(chatId, type, location, timeRangeMinutes = 60) {
+  if (!chatId) {
+    throw new Error('Chat ID is required');
+  }
+  
+  if (!location) {
+    throw new Error('Location is required');
+  }
+  
+  const validTypes = ['temperature', 'humidity', 'pressure'];
+  if (!validTypes.includes(type)) {
+    throw new Error(`Invalid chart type. Must be one of: ${validTypes.join(', ')}`);
+  }
+  
+  try {
+    const response = await fetch('/api/telegram/chart', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        location,
+        type,
+        timeRangeMinutes,
+        language: getSelectedLanguage()
+      })
+    });
+    
+    return await handleApiResponse(response);
+  } catch (error) {
+    console.error('Error sending test chart:', error);
+    throw error;
+  }
+} 

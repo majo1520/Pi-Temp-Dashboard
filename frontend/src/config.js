@@ -1,6 +1,6 @@
 const config = {
     // API configuration
-    API_URL: import.meta.env.VITE_API_URL || '/api',
+    API_URL: '/api',
     
     // MQTT configuration
     MQTT_URL: import.meta.env.VITE_MQTT_URL || 'ws://localhost:9001',

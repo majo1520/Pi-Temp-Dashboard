@@ -5,6 +5,7 @@ import Chart from "react-apexcharts";
 import { saveAs } from "file-saver";
 import AdminSidebar from "./components/AdminSidebar";
 import UsersManagement from "./components/UsersManagement";
+import TelegramSettings from "./components/TelegramSettings";
 import * as api from "./services/api";
 import { useTranslation } from 'react-i18next';
 
@@ -32,6 +33,7 @@ export default function AdminPanel() {
   const [sensorStatuses, setSensorStatuses] = useState([]);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [showUsersManagement, setShowUsersManagement] = useState(false);
+  const [showTelegramSettings, setShowTelegramSettings] = useState(false);
   const { t, i18n } = useTranslation();
   
   // Add state for hidden locations
@@ -352,6 +354,17 @@ export default function AdminPanel() {
   // Toggle user management visibility in main panel
   const toggleUsersManagement = () => {
     setShowUsersManagement(prev => !prev);
+    if (showTelegramSettings) {
+      setShowTelegramSettings(false);
+    }
+  };
+
+  // Toggle Telegram settings visibility
+  const toggleTelegramSettings = () => {
+    setShowTelegramSettings(prev => !prev);
+    if (showUsersManagement) {
+      setShowUsersManagement(false);
+    }
   };
 
   // Refresh all data
@@ -402,6 +415,12 @@ export default function AdminPanel() {
               color={showUsersManagement ? "blue" : "gray"}
             />
             <HeaderButton
+              icon="🔔"
+              label={t('telegramAlerts') || "Telegram Alerts"}
+              onClick={toggleTelegramSettings}
+              color={showTelegramSettings ? "blue" : "gray"}
+            />
+            <HeaderButton
               icon={isRefreshing ? "⏳" : "🔄"}
               label={isRefreshing ? (t('refreshing') || "Refreshing...") : (t('refresh') || "Refresh")}
               onClick={refreshData}
@@ -431,6 +450,24 @@ export default function AdminPanel() {
               </div>
               <div className="p-6">
                 <UsersManagement t={t} />
+              </div>
+            </div>
+          )}
+          
+          {/* Telegram Settings Section (conditionally shown in main view) */}
+          {showTelegramSettings && (
+            <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+              <div className="flex justify-between items-center px-6 py-4 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800">
+                <h2 className="text-lg font-medium text-blue-800 dark:text-blue-300">{t('telegramAlerts') || 'Telegram Alerts'}</h2>
+                <button 
+                  onClick={toggleTelegramSettings}
+                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-6">
+                <TelegramSettings t={t} />
               </div>
             </div>
           )}

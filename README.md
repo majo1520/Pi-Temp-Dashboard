@@ -11,6 +11,7 @@ A comprehensive IoT monitoring solution featuring BME280 temperature/humidity/pr
 - **Advanced Visualization:** Interactive charts with zoom, scroll, fullscreen and state persistence
 - **Smart Threshold Alerts:** Configurable visual indicators for temperature, humidity, and pressure readings
 - **Multi-sensor Support:** Monitor unlimited locations simultaneously with automatic color coding
+- **Telegram Notifications:** Receive automated alerts when readings exceed thresholds with customizable frequency
 - **Comprehensive Logging System:** Performance metrics, error tracking, and event aggregation
 - **Advanced Data Export:** Download data as Excel, CSV, or JSON with formatting options
 - **Performance Optimization:** Smart rendering, data aggregation, and memory usage monitoring
@@ -33,6 +34,7 @@ The system consists of the following integrated components:
 6. **SQLite** - Relational database for user management, settings, and UI preferences
 7. **Backend Server** - Node.js Express server with API endpoints and authentication
 8. **Frontend Dashboard** - React application with ApexCharts for visualization and performance monitoring
+9. **Telegram Bot** - Notification system for alerts when sensor readings exceed thresholds
 
 > **Note**: For a detailed interactive view of the architecture, open `docs/architecture.html` in your web browser. This HTML visualization shows the complete system architecture with color-coded components, data flow arrows, and detailed descriptions of each component's functionality.
 
@@ -347,6 +349,8 @@ ENABLE_RATE_LIMITING=true
 CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://$(hostname -I | awk '{print $1}'):5000
 ENABLE_ADVANCED_LOGGING=true
 LOG_RETENTION_DAYS=30
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_NOTIFICATIONS_ENABLED=true
 EOF
 ```
 
@@ -436,6 +440,50 @@ Access the dashboard settings to configure thresholds for temperature, humidity,
 - Color coding for heatmaps
 - Alert conditions
 - Data highlighting
+- Telegram notifications (when enabled)
+
+### Telegram Notification System
+
+The dashboard includes a configurable Telegram notification system that sends alerts when sensor readings exceed configured thresholds.
+
+#### Key Features
+
+- **Per-sensor threshold configuration:** Set individual thresholds for each location and sensor type
+- **Customizable notification frequency:** Configure how often notifications can be sent (prevents alert storms)
+- **Multilingual support:** Receive notifications in English or Slovak language
+- **Chart attachments:** Option to include sensor data charts with notifications
+- **Threshold types:** Choose between 'range' (min/max) and 'max' (ceiling) threshold types
+- **Test notifications:** Send test messages to verify proper configuration
+- **Individual control:** Enable/disable notifications for specific sensor types
+
+#### Setting Up Telegram Notifications
+
+1. **Create a Telegram Bot:**
+   - Message [@BotFather](https://t.me/botfather) on Telegram
+   - Send `/newbot` and follow instructions to create a bot
+   - Copy the bot token provided
+
+2. **Configure the Backend:**
+   - Add your bot token to the `.env` file:
+     ```
+     TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+     TELEGRAM_NOTIFICATIONS_ENABLED=true
+     ```
+
+3. **Configure from the Dashboard:**
+   - Go to Admin Panel → Telegram Alerts
+   - Click "Start Chat" with your bot
+   - Forward the message from your bot to the dashboard
+   - Configure thresholds, frequency, and language preferences
+   - Test the connection with the "Send Test Message" button
+
+4. **Verify Chart Generation:**
+   - Test chart sending with the "Test Chart" button
+   - Charts require proper InfluxDB setup and data history
+
+#### Advanced Configuration
+
+For additional customization options, see the [Telegram Notifications Documentation](docs/TELEGRAM_NOTIFICATIONS.md).
 
 ## Troubleshooting
 
@@ -460,6 +508,14 @@ Access the dashboard settings to configure thresholds for temperature, humidity,
 - **Slow performance**: Review chart performance logs in the Dashboard settings page.
 - **Memory usage high**: Consider adjusting data aggregation settings in the dashboard configuration.
 
+### Telegram Notifications
+
+- **Bot not sending messages**: Verify your bot token is correct and the bot hasn't been blocked
+- **No charts in notifications**: Ensure `canvas` and `chartjs-node-canvas` packages are properly installed
+- **Missing notifications**: Check that sensor readings actually exceed the configured thresholds
+- **Delayed notifications**: Review notification frequency settings, which may be limiting notification rate
+- **Chat ID issues**: Try reconnecting your Telegram account through the Admin Panel
+
 ## System Maintenance
 
 ### Backup Database
@@ -483,12 +539,13 @@ Keep all components up to date:
 ## Component Versions
 
 - Frontend: React 18.2.0, Vite 4.4.5, ApexCharts 3.41.0
-- Backend: Node.js 16+, Express 4.18.2
+- Backend: Node.js 16+, Express 4.18.2, Chart.js 4.4.9, node-telegram-bot-api 0.64.0, telegraf 4.15.3
 - Database: InfluxDB 2.6
 - MQTT: Mosquitto 2.0
 - Telegraf: 1.25
 - Python: 3.7+ with Adafruit CircuitPython BME280
 - Logging: Advanced custom logging system with rotation
+- Charts: Chart.js with chartjs-node-canvas for server-side rendering
 
 ## License
 
@@ -500,5 +557,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Adafruit](https://www.adafruit.com/) for BME280 libraries
 - [InfluxData](https://www.influxdata.com/) for time-series storage
 - [Eclipse Mosquitto](https://mosquitto.org/) for MQTT broker
+- [Telegram Bot API](https://core.telegram.org/bots/api) for notification system
+- [Chart.js](https://www.chartjs.org/) for server-side chart generation
 
 ---

@@ -17,6 +17,18 @@ const originalFetch = window.fetch;
 const customFetch = function(resource, options = {}) {
   const suppressAuthErrors = shouldSuppressAuthErrors();
   
+  // Normalize API URLs to use relative paths for proper proxy handling
+  if (typeof resource === 'string' && resource.includes('/api/')) {
+    // Extract the API path
+    const apiPath = resource.substring(resource.indexOf('/api/'));
+    
+    // Replace absolute URL with relative path
+    if (resource !== apiPath) {
+      console.log(`Normalizing API request: ${resource} -> ${apiPath}`);
+      resource = apiPath;
+    }
+  }
+  
   // If we're not suppressing auth errors, just use the original fetch
   if (!suppressAuthErrors) {
     return originalFetch(resource, options);
