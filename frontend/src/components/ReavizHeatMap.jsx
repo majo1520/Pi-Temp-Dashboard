@@ -779,12 +779,13 @@ const ReavizHeatMap = ({
     return (
       <div className="hour-labels" style={{ 
         position: 'absolute', 
-        right: '100%', // Position completely outside the graph container to the left
+        left: isFullscreen ? '10px' : '30px', 
         top: '0', 
         height: '100%', 
-        width: '60px', // Set a fixed width for the hour labels column
-        paddingRight: '5px', // Add some space between labels and graph
-        pointerEvents: 'none' // Make sure it doesn't interfere with mouse events
+        display: 'flex', 
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        zIndex: 10
       }}>
         {Array.from({ length: 24 }, (_, i) => {
           // Create hour label based on language
