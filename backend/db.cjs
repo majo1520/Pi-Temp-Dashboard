@@ -171,6 +171,7 @@ function initializeDatabase() {
       pressure_min REAL,
       pressure_max REAL,
       pressure_threshold_type TEXT DEFAULT 'range' CHECK(pressure_threshold_type IN ('range', 'max')),
+      offline_notification_enabled BOOLEAN DEFAULT 0 CHECK(offline_notification_enabled IN (0, 1)),
       notification_frequency_minutes INTEGER DEFAULT 30,
       notification_language TEXT DEFAULT 'en' CHECK(notification_language IN ('en', 'sk')),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -1033,6 +1034,53 @@ const notificationSettings = {
     });
   },
   
+  // Get all notification settings for all users
+  async getAllSettings() {
+    logger.log(`Getting all notification settings for all users`);
+    return new Promise((resolve, reject) => {
+      // Get all columns in the notification_settings table
+      db.all("PRAGMA table_info(notification_settings)", [], (err, columns) => {
+        if (err) {
+          logger.error(`Failed to get columns info: ${err.message}`);
+          return reject(err);
+        }
+
+        // Build a dynamic query that only includes existing columns
+        const columnNames = columns.map(col => col.name).filter(name => 
+          name !== 'id' && name !== 'created_at' && name !== 'updated_at'
+        );
+        
+        // Always include these base columns
+        const baseColumns = ['id', 'user_id', 'chat_id', 'enabled', 'location'];
+        
+        // Combine all columns for the query
+        const allColumns = [...baseColumns, ...columnNames.filter(col => !baseColumns.includes(col))];
+        
+        // Create the SELECT query with only existing columns
+        const query = `SELECT ${allColumns.join(', ')} FROM notification_settings`;
+        logger.log(`SQL Query: ${query} - getting all settings`);
+        
+        db.all(query, [], (err, rows) => {
+          if (err) {
+            logger.error(`Database error: ${err.message}`);
+            reject(err);
+          } else {
+            // Add default values for missing columns
+            const processedRows = rows.map(row => {
+              // Ensure notification_language has a default value
+              if (row.notification_language === undefined || row.notification_language === null) {
+                row.notification_language = 'en';
+              }
+              return row;
+            });
+            logger.log(`Retrieved ${processedRows.length} notification settings in total`);
+            resolve(processedRows);
+          }
+        });
+      });
+    });
+  },
+  
   // Get notification settings for a specific user and location
   async getLocationSettings(userId, location) {
     return new Promise((resolve, reject) => {
@@ -1140,6 +1188,20 @@ const notificationSettings = {
         
         if (existingColumns.includes('pressure_threshold_type')) {
           columnMapping['pressure_threshold_type'] = mergedSettings.pressure_threshold_type || 'range';
+        }
+        
+        // Handle offline_notification_enabled separately for debugging and clarity
+        if (existingColumns.includes('offline_notification_enabled')) {
+          // Log the raw value before conversion
+          logger.log(`Raw offline_notification_enabled value: ${mergedSettings.offline_notification_enabled}`);
+          
+          // Convert to strict 0 or 1
+          const offlineValue = mergedSettings.offline_notification_enabled === true ? 1 : 0;
+          
+          // Log the converted value
+          logger.log(`Converting offline_notification_enabled to ${offlineValue}`);
+          
+          columnMapping['offline_notification_enabled'] = offlineValue;
         }
         
         // Filter to only include columns that actually exist in the database

@@ -5,8 +5,51 @@
 
 .calendar-heatmap-container .react-calendar-heatmap-day {
   /* ak by ste chceli zmenšovať priamo tu */
-  stroke: #ce8888;
+  stroke: var(--heatmap-stroke-color, #ddd);
+  stroke-width: 1;
   shape-rendering: crispEdges;
   width: 10px;
   height: 10px;
+}
+
+/* Dark mode styling */
+.dark .calendar-heatmap-container .react-calendar-heatmap-day {
+  stroke: #4a5568;
+  stroke-width: 1.5;
+}
+
+/* Empty day styling for dark mode - make cells visible with background */
+.dark .calendar-heatmap-container .react-calendar-heatmap-day[data-count="0"],
+.dark .calendar-heatmap-container .react-calendar-heatmap-day:not([data-count]) {
+  fill: #2d3748;
+}
+
+.dark .react-calendar-heatmap {
+  background-color: #1a202c;
+  border-radius: 4px;
+  padding: 5px;
+}
+
+.dark .react-calendar-heatmap text {
+  fill: rgba(255, 255, 255, 0.9);
+}
+
+.react-calendar-heatmap text {
+  font-size: 0.7em;
+  fill: #333;
+}
+
+/* Increase spacing between days in dark mode for better visibility */
+.dark .calendar-heatmap-container .react-calendar-heatmap-month-labels {
+  font-weight: 600;
+}
+
+.dark .calendar-heatmap-container .react-calendar-heatmap-weekday-labels {
+  font-weight: 500;
+}
+
+/* Add a subtle grid */
+.dark .calendar-heatmap-container .react-calendar-heatmap-all-weeks {
+  stroke: #2d3748;
+  stroke-width: 0.5;
 }

@@ -30,7 +30,8 @@ function useSensorData({
   autoRefresh = true,
   customStart = "",
   customEnd = "",
-  customApplied = false
+  customApplied = false,
+  heatmapField = 'teplota'
 }, errorHandler) {
   // Sensor data states
   const [allSensors, setAllSensors] = useState([]);
@@ -349,6 +350,8 @@ function useSensorData({
     let samplingInterval = gapInterval;
     if (rangeKey === '30d') {
       samplingInterval = 3600000; // 1 hour for 30d
+    } else if (rangeKey === '180d') {
+      samplingInterval = 10800000; // 3 hours for 180d
     } else if (rangeKey === '365d') {
       samplingInterval = 21600000; // 6 hours for 365d
     }
@@ -581,15 +584,15 @@ function useSensorData({
     if (selectedLocations.length === 0 || rangeKey === 'live') return [];
     
     const sensor = selectedLocations[0];
-    const data = historicalChartData[sensor]?.['teplota'] || [];
+    const data = historicalChartData[sensor]?.[heatmapField] || [];
     
-    if (rangeKey === '365d' || rangeKey === '30d' || rangeKey === 'custom') {
+    if (rangeKey === '365d' || rangeKey === '180d' || rangeKey === '30d' || rangeKey === 'custom') {
       return prepareDailyHeatmapData(data);
     }
     
     const aggregatorWindow = HEATMAP_AGGREGATORS[rangeKey] || '1h';
     return prepareHeatmapData(data, aggregatorWindow);
-  }, [selectedLocations, historicalChartData, rangeKey]);
+  }, [selectedLocations, historicalChartData, rangeKey, heatmapField]);
 
   // Optimize series generation for multiple locations
   const apexSeries = useMemo(() => {
@@ -619,17 +622,33 @@ function useSensorData({
     return seriesList;
   }, [selectedLocations, chartData, historicalChartData, rangeKey]);
 
-  // Initialize sensor data on mount
+  // Initialize sensor data on mount with flag to avoid zoom resets
   useEffect(() => {
+    // Create a flag to indicate this is an auto-refresh update
+    window.__isAutoRefreshUpdate = false;
+    
     fetchLocations();
     fetchSensors();
     
     // Set up interval for regular sensor updates
     const interval = setInterval(() => {
-      fetchSensors().catch(err => console.error('Error in periodic sensor fetch:', err));
+      // Set flag before fetching to indicate this is an auto-refresh
+      window.__isAutoRefreshUpdate = true;
+      
+      fetchSensors()
+        .catch(err => console.error('Error in periodic sensor fetch:', err))
+        .finally(() => {
+          // Reset the flag after a short delay to ensure chart updates have processed
+          setTimeout(() => {
+            window.__isAutoRefreshUpdate = false;
+          }, 500);
+        });
     }, 5000);
     
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      window.__isAutoRefreshUpdate = false;
+    };
   }, [fetchLocations, fetchSensors]);
 
   /**
@@ -682,4 +701,4 @@ function useSensorData({
   };
 }
 
-export default useSensorData; 
+export default useSensorData;

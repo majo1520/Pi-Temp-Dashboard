@@ -8,6 +8,7 @@ import UsersManagement from "./components/UsersManagement";
 import TelegramSettings from "./components/TelegramSettings";
 import * as api from "./services/api";
 import { useTranslation } from 'react-i18next';
+import { reloadTranslations } from './i18n';
 
 // Simple header action button component
 const HeaderButton = ({ icon, label, onClick, color = "gray", disabled = false }) => (
@@ -47,6 +48,11 @@ export default function AdminPanel() {
   // Add loading state
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Force reload translations when the component mounts
+  useEffect(() => {
+    reloadTranslations();
+  }, []);
+  
   // Load hidden locations and order on component mount
   useEffect(() => {
     const storedHiddenLocations = localStorage.getItem('hiddenLocations');
@@ -416,7 +422,7 @@ export default function AdminPanel() {
             />
             <HeaderButton
               icon="🔔"
-              label={t('telegramAlerts') || "Telegram Alerts"}
+              label={t('telegramAlerts') || 'Telegram Alerts'}
               onClick={toggleTelegramSettings}
               color={showTelegramSettings ? "blue" : "gray"}
             />
@@ -629,21 +635,53 @@ function SensorRow({ sensor, getSensorStatus, updateSingleField, reloadSensors, 
     
     setChartError(null);
     
+    console.log(`Fetching data for ${sensor.name} with range: ${debouncedRange}`);
+    
+    // Set loading timeout for long-running requests
+    const timeoutId = setTimeout(() => {
+      console.log(`Request for ${sensor.name} with range ${debouncedRange} is taking a long time...`);
+    }, 5000);
+    
     api.getSensorHistory(sensor.name, debouncedRange)
       .then(data => {
+        clearTimeout(timeoutId);
+        
+        console.log(`Received ${data?.length || 0} data points for ${sensor.name} with range ${debouncedRange}`);
+        
+        // Check for valid data
+        if (!data || !Array.isArray(data) || data.length === 0) {
+          console.warn(`No data received for ${sensor.name} with range ${debouncedRange}`);
+          setUptimeData([]);
+          return;
+        }
+        
+        // Log first and last data point for debugging
+        const first = data[0];
+        const last = data[data.length - 1];
+        console.log('First data point:', first);
+        console.log('Last data point:', last);
+        
         // Special handling for 365d view - pre-aggregate data to improve performance
-        if (debouncedRange === "365d" && Array.isArray(data) && data.length > 500) {
-          // Process data for 365d view with daily sampling
-          setUptimeData(preprocessLongRangeData(data));
+        if (debouncedRange === "365d") {
+          console.log(`Processing 365d data for ${sensor.name} with ${data.length} points`);
+          
+          // For 365d, always preprocess for better performance
+          const processedData = preprocessLongRangeData(data);
+          setUptimeData(processedData);
         } else {
           setUptimeData(data);
         }
       })
       .catch(err => {
-        console.error("Chyba pri historických dátach:", err);
+        clearTimeout(timeoutId);
+        console.error(`Error fetching data for ${sensor.name} with range ${debouncedRange}:`, err);
         setChartError(err.message || "Error loading chart data");
         setUptimeData([]);
       });
+      
+    return () => {
+      clearTimeout(timeoutId);
+    };
   }, [sensor.name, debouncedRange, showChart]);
 
   const { online, offline } = useMemo(
@@ -1105,16 +1143,9 @@ function SensorRow({ sensor, getSensorStatus, updateSingleField, reloadSensors, 
 
 /** Funkcia generuje stacked data pre graf (Online/Offline). */
 function generateStackedData(uptimeData) {
-  const gapThreshold = 30 * 60 * 1000; // 30 min for gap display
-  const sampleInterval = 5 * 60 * 1000; // 5 min for downsampling
-  const briefOutageThreshold = 5 * 60 * 1000; // 5 min threshold for brief outages
-  const onlineSeries = [];
-  const offlineSeries = [];
-  let previousSampleTime = null;
-  let previousStatus = null;
-  let lastOnlineTime = null;
-
   if (!Array.isArray(uptimeData) || uptimeData.length === 0) {
+    console.warn('No data to generate stacked series');
+    
     // Return data with at least one valid point to prevent ApexCharts errors
     const now = new Date().getTime();
     return { 
@@ -1123,13 +1154,61 @@ function generateStackedData(uptimeData) {
     };
   }
 
+  // Configure intervals and thresholds based on data size and range span
+  const dataSize = uptimeData.length;
+  // Sort data first to determine time range
+  const sortedForSpan = [...uptimeData].sort((a, b) => {
+    const timeA = a.timestamp || a._time;
+    const timeB = b.timestamp || b._time;
+    if (!timeA || !timeB) return 0;
+    return new Date(timeA.replace(" ", "T")) - new Date(timeB.replace(" ", "T"));
+  });
+  
+  // If we have valid data, calculate the timespan
+  let gapThreshold = 5 * 60 * 1000; // 5 minutes default
+  let sampleInterval = 5 * 60 * 1000; // 5 minutes default
+  const briefOutageThreshold = 2 * 60 * 1000; // 2 minutes (doesn't change)
+  
+  if (dataSize > 0 && sortedForSpan.length >= 2) {
+    const firstTime = sortedForSpan[0].timestamp || sortedForSpan[0]._time;
+    const lastTime = sortedForSpan[sortedForSpan.length-1].timestamp || sortedForSpan[sortedForSpan.length-1]._time;
+    
+    if (firstTime && lastTime) {
+      const start = new Date(firstTime.replace(" ", "T"));
+      const end = new Date(lastTime.replace(" ", "T"));
+      const timespan = end - start;
+      const days = timespan / (1000 * 60 * 60 * 24);
+      
+      // Adjust parameters based on timespan
+      if (days > 300) { // ~365d
+        gapThreshold = 24 * 60 * 60 * 1000; // 1 day
+        sampleInterval = 6 * 60 * 60 * 1000; // 6 hours
+        console.log('365d view detected, using larger gap and sample intervals');
+      } else if (days > 20) { // ~30d
+        gapThreshold = 6 * 60 * 60 * 1000; // 6 hours
+        sampleInterval = 3 * 60 * 60 * 1000; // 3 hours
+      } else if (days > 5) { // ~7d
+        gapThreshold = 2 * 60 * 60 * 1000; // 2 hours
+        sampleInterval = 60 * 60 * 1000; // 1 hour
+      }
+    }
+  }
+  
   // Sort data by timestamp to ensure proper sequence
   const sortedData = [...uptimeData].sort((a, b) => {
     const timeA = a.timestamp || a._time;
     const timeB = b.timestamp || b._time;
-    return new Date(timeA) - new Date(timeB);
+    if (!timeA || !timeB) return 0;
+    return new Date(timeA.replace(" ", "T")) - new Date(timeB.replace(" ", "T"));
   });
   
+  // Set up temporary variables
+  const onlineSeries = [];
+  const offlineSeries = [];
+  let previousSampleTime = null;
+  let previousStatus = null;
+  let lastOnlineTime = null;
+
   // Process the data points
   for (let i = 0; i < sortedData.length; i++) {
     const point = sortedData[i];
@@ -1250,54 +1329,128 @@ function generateStackedData(uptimeData) {
 function preprocessLongRangeData(data) {
   if (!Array.isArray(data) || data.length === 0) return data;
   
-  // Sort data by timestamp
-  const sortedData = [...data].sort((a, b) => {
-    const timeA = a.timestamp || a._time;
-    const timeB = b.timestamp || b._time;
-    return new Date(timeA) - new Date(timeB);
+  console.log('Preprocessing 365d data, received', data.length, 'records');
+  
+  // Validate and sort data by timestamp
+  const validData = data.filter(point => {
+    const timeStr = point.timestamp || point._time;
+    return timeStr && !isNaN(new Date(timeStr.replace(" ", "T")).getTime());
   });
   
-  const dailyProcessed = [];
+  if (validData.length === 0) {
+    console.error('No valid data points found in 365d data');
+    return data; // Return original data if no valid points found
+  }
+  
+  const sortedData = [...validData].sort((a, b) => {
+    const timeA = a.timestamp || a._time;
+    const timeB = b.timestamp || b._time;
+    return new Date(timeA.replace(" ", "T")) - new Date(timeB.replace(" ", "T"));
+  });
+  
+  // Determine time range of the data
+  const firstPoint = sortedData[0];
+  const lastPoint = sortedData[sortedData.length - 1];
+  const firstTime = new Date(firstPoint.timestamp || firstPoint._time);
+  const lastTime = new Date(lastPoint.timestamp || lastPoint._time);
+  
+  console.log('Data time range:', firstTime, 'to', lastTime);
+  
+  // Calculate optimal sampling rate based on total timespan
+  // For 365d, we want around 365-730 data points (1-2 per day)
+  const timespan = lastTime - firstTime;
+  const days = timespan / (24 * 60 * 60 * 1000);
+  const targetPoints = Math.min(Math.max(365, days), 730);
+  const samplingRate = Math.max(1, Math.floor(sortedData.length / targetPoints));
+  
+  console.log('Using sampling rate of 1:', samplingRate, 'for 365d data');
+  
+  // Initialize data structures for processing
+  const processedData = [];
   let currentDay = null;
-  let currentStatus = null;
-  let pointCount = 0;
+  let currentDayPoints = [];
   
-  // Process data day by day
+  // Process data day by day with improved sampling
   for (const point of sortedData) {
-    const timeStr = point.timestamp || point._time;
-    if (!timeStr) continue;
-    
-    const date = new Date(timeStr.replace(" ", "T"));
-    const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-    
-    const isOnline = point.online !== false;
-    
-    // If we've moved to a new day or status has changed
-    if (currentDay !== day || currentStatus !== isOnline) {
-      // Add the current point
-      dailyProcessed.push(point);
+    try {
+      const timeStr = point.timestamp || point._time;
+      if (!timeStr) continue;
       
-      currentDay = day;
-      currentStatus = isOnline;
-      pointCount = 1;
-    } else {
-      // Same day and status, only add every 6th point
-      if (pointCount % 6 === 0) {
-        dailyProcessed.push(point);
+      const date = new Date(timeStr.replace(" ", "T"));
+      if (isNaN(date.getTime())) continue;
+      
+      const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+      
+      // If we've moved to a new day
+      if (currentDay !== day) {
+        // Process points from previous day if we have any
+        if (currentDayPoints.length > 0) {
+          // Add first and last point of the day, plus status changes
+          if (currentDayPoints.length === 1) {
+            processedData.push(currentDayPoints[0]);
+          } else {
+            // Always include first and last point of the day
+            processedData.push(currentDayPoints[0]);
+            
+            // Add status change points (first checked)
+            let prevStatus = currentDayPoints[0].online !== false;
+            for (let i = 1; i < currentDayPoints.length - 1; i++) {
+              const status = currentDayPoints[i].online !== false;
+              if (status !== prevStatus) {
+                processedData.push(currentDayPoints[i]);
+                prevStatus = status;
+              }
+            }
+            
+            // Add last point of day
+            processedData.push(currentDayPoints[currentDayPoints.length - 1]);
+          }
+        }
+        
+        // Reset for new day
+        currentDay = day;
+        currentDayPoints = [point];
+      } else {
+        // Same day, just add the point to the current day's collection
+        currentDayPoints.push(point);
       }
-      pointCount++;
+    } catch (err) {
+      console.error('Error processing point in 365d data:', err);
+      // Continue with next point on error
     }
   }
   
-  // Always include the last point
+  // Process the last day
+  if (currentDayPoints.length > 0) {
+    if (currentDayPoints.length === 1) {
+      processedData.push(currentDayPoints[0]);
+    } else {
+      // Same logic as in the loop
+      processedData.push(currentDayPoints[0]);
+      
+      let prevStatus = currentDayPoints[0].online !== false;
+      for (let i = 1; i < currentDayPoints.length - 1; i++) {
+        const status = currentDayPoints[i].online !== false;
+        if (status !== prevStatus) {
+          processedData.push(currentDayPoints[i]);
+          prevStatus = status;
+        }
+      }
+      
+      processedData.push(currentDayPoints[currentDayPoints.length - 1]);
+    }
+  }
+  
+  // Always include the very last point from original data
   if (sortedData.length > 0) {
-    const lastPoint = sortedData[sortedData.length - 1];
-    if (!dailyProcessed.includes(lastPoint)) {
-      dailyProcessed.push(lastPoint);
+    const lastOriginalPoint = sortedData[sortedData.length - 1];
+    if (!processedData.includes(lastOriginalPoint)) {
+      processedData.push(lastOriginalPoint);
     }
   }
   
-  return dailyProcessed;
+  console.log('Preprocessed 365d data from', data.length, 'to', processedData.length, 'points');
+  return processedData;
 }
 
 /** Format time since in a human readable format */

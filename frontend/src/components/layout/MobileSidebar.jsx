@@ -23,6 +23,8 @@ const MobileSidebar = ({ isVisible, onClose }) => {
     // Heatmap settings
     heatmapType,
     setHeatmapType,
+    setPreferMatrixHeatmap,
+    updateHeatmapType,
     
     // Aggregation
     aggregationOptions,
@@ -116,12 +118,12 @@ const MobileSidebar = ({ isVisible, onClose }) => {
                         className="ml-3 flex-1 text-gray-700 dark:text-gray-200 capitalize"
                       >
                         {key === "teplota"
-                          ? t('temperature')
+                          ? <span><span className="mr-1">🌡️</span>{t('temperature')}</span>
                           : key === "vlhkost"
-                          ? t('humidity')
+                          ? <span><span className="mr-1">💧</span>{t('humidity')}</span>
                           : key === "tlak"
-                          ? t('pressure')
-                          : t('heatmap')}
+                          ? <span><span className="mr-1">🧭</span>{t('pressure')}</span>
+                          : <span><span className="mr-1">🗺️</span>{t('heatmap')}</span>}
                       </label>
                     </div>
                   ))}
@@ -163,7 +165,7 @@ const MobileSidebar = ({ isVisible, onClose }) => {
                   </h3>
                   <div className="grid grid-cols-2 gap-2">
                     <button
-                      onClick={() => setHeatmapType("matrix")}
+                      onClick={() => updateHeatmapType("matrix")}
                       className={`py-3 text-center rounded-lg ${
                         heatmapType === "matrix" 
                           ? "bg-blue-600 text-white" 
@@ -173,7 +175,7 @@ const MobileSidebar = ({ isVisible, onClose }) => {
                       {t('matrix')}
                     </button>
                     <button
-                      onClick={() => setHeatmapType("calendar")}
+                      onClick={() => updateHeatmapType("calendar")}
                       className={`py-3 text-center rounded-lg ${
                         heatmapType === "calendar" 
                           ? "bg-blue-600 text-white" 

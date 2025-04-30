@@ -19,6 +19,26 @@ const isLoggingEnabled = () => {
   return false;
 };
 
+// Add cache-busting for translations
+// This helps ensure that any newly added translations are picked up
+const clearTranslationCache = () => {
+  try {
+    // Clear i18next cache in localStorage
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('i18next_res_')) {
+        localStorage.removeItem(key);
+      }
+    });
+    
+    // Log cache clearing (if logging is enabled)
+    if (isLoggingEnabled()) {
+      console.log('Translation cache cleared');
+    }
+  } catch (e) {
+    console.error('Error clearing translation cache:', e);
+  }
+};
+
 // Legacy translations not yet moved to JSON files
 const legacyTranslations = {
   sk: {
@@ -41,10 +61,10 @@ const legacyTranslations = {
     account: "Účet",
     
     // Chart types and fields
-    temperature: "🌡️ Teplota",
-    humidity: "💧 Vlhkosť",
-    pressure: "🧭 Tlak",
-    heatmap: "📊 Kobercový graf",
+    temperature: "Teplota",
+    humidity: "Vlhkosť",
+    pressure: "Tlak",
+    heatmap: "Kobercový graf",
     minValues: "Minimálne hodnoty",
     avgValues: "Priemerné hodnoty",
     maxValues: "Maximálne hodnoty",
@@ -52,6 +72,68 @@ const legacyTranslations = {
     separate: "Separátne",
     mergedTitle: "Zlúčiť všetky dáta do jedného grafu",
     separateTitle: "Zobraziť každý senzor zvlášť",
+    
+    // Scales for different measurement types
+    temperatureScale: "Teplotná stupnica",
+    humidityScale: "Stupnica vlhkosti",
+    pressureScale: "Stupnica tlaku",
+    
+    // Heatmap specific translations
+    heatmapStyle: "Štýl grafu",
+    matrix: "Matica",
+    calendar: "Kalendár",
+    day: "Deň",
+    noData: "Žiadne údaje",
+    
+    // Calendar heatmap translations
+    heatmapDetails: {
+      temperatureMatrix: "Teplotná matica",
+      year: "Rok {{year}}",
+      tooltip: "{{date}}: {{temp}}°C",
+      noData: "Žiadne údaje",
+      loading: "Načítavam údaje pre rok {{year}}",
+      loadingData: "Načítavam údaje pre rok {{year}}",
+      months: {
+        jan: "Jan",
+        feb: "Feb",
+        mar: "Mar",
+        apr: "Apr",
+        may: "Máj",
+        jun: "Jún",
+        jul: "Júl",
+        aug: "Aug",
+        sep: "Sep",
+        oct: "Okt",
+        nov: "Nov",
+        dec: "Dec"
+      },
+      weekdays: {
+        mon: "Po",
+        tue: "Ut",
+        wed: "St",
+        thu: "Št",
+        fri: "Pi",
+        sat: "So",
+        sun: "Ne"
+      },
+      hourFormat: "{{hour}}:00",
+      hourFormatAMPM: "{{hour}} {{ampm}}",
+      AM: "AM",
+      PM: "PM",
+      days: "dní",
+      hours: "hodiny",
+      hoursOfDay: "Hodiny dňa",
+      calendarDays: "Kalendárne dni",
+      temperatureScale: "Teplotná škála"
+    },
+    
+    // Threshold descriptions
+    thresholdMin: "Minimálny prah",
+    thresholdMid: "Stredný prah",
+    thresholdHigh: "Vysoký prah",
+    colorMin: "Farba nízkeho prahu",
+    colorMid: "Farba stredného prahu",
+    colorHigh: "Farba vysokého prahu",
     
     // Locations
     locationSelector: "Výber lokácie",
@@ -101,10 +183,10 @@ const legacyTranslations = {
     account: "Account",
     
     // Chart types and fields
-    temperature: "🌡️ Temperature",
-    humidity: "💧 Humidity",
-    pressure: "🧭 Pressure",
-    heatmap: "📊 Heatmap",
+    temperature: "Temperature",
+    humidity: "Humidity",
+    pressure: "Pressure",
+    heatmap: "Heatmap",
     minValues: "Minimum Values",
     avgValues: "Average Values",
     maxValues: "Maximum Values",
@@ -112,6 +194,68 @@ const legacyTranslations = {
     separate: "Separate",
     mergedTitle: "Merge all data into one chart",
     separateTitle: "Show each sensor separately",
+    
+    // Scales for different measurement types
+    temperatureScale: "Temperature Scale",
+    humidityScale: "Humidity Scale",
+    pressureScale: "Pressure Scale",
+    
+    // Heatmap specific translations
+    heatmapStyle: "Heatmap Style",
+    matrix: "Matrix",
+    calendar: "Calendar",
+    day: "Day",
+    noData: "No Data",
+    
+    // Calendar heatmap translations
+    heatmapDetails: {
+      temperatureMatrix: "Temperature Matrix",
+      year: "Year {{year}}",
+      tooltip: "{{date}}: {{temp}}°C",
+      noData: "No data available",
+      loading: "Loading data for year {{year}}",
+      loadingData: "Loading data for year {{year}}",
+      months: {
+        jan: "Jan",
+        feb: "Feb",
+        mar: "Mar",
+        apr: "Apr",
+        may: "May",
+        jun: "Jun",
+        jul: "Jul",
+        aug: "Aug",
+        sep: "Sep",
+        oct: "Oct",
+        nov: "Nov",
+        dec: "Dec"
+      },
+      weekdays: {
+        mon: "Mon",
+        tue: "Tue",
+        wed: "Wed",
+        thu: "Thu",
+        fri: "Fri",
+        sat: "Sat",
+        sun: "Sun"
+      },
+      hourFormat: "{{hour}}:00",
+      hourFormatAMPM: "{{hour}} {{ampm}}",
+      AM: "AM",
+      PM: "PM",
+      days: "days",
+      hours: "hours",
+      hoursOfDay: "Hours of Day",
+      calendarDays: "Calendar Days",
+      temperatureScale: "Temperature Scale"
+    },
+    
+    // Threshold descriptions
+    thresholdMin: "Minimum threshold",
+    thresholdMid: "Middle threshold",
+    thresholdHigh: "High threshold",
+    colorMin: "Low threshold color",
+    colorMid: "Middle threshold color",
+    colorHigh: "High threshold color",
     
     // Locations
     locationSelector: "Location Selector",
@@ -143,6 +287,26 @@ const legacyTranslations = {
   }
 };
 
+// Preprocess the JSON format to ensure valid objects
+const processTranslations = (translations) => {
+  if (typeof translations === 'string') {
+    try {
+      return JSON.parse(translations);
+    } catch (e) {
+      console.error('Failed to parse translation JSON:', e);
+      return {};
+    }
+  }
+  return translations;
+};
+
+// Process the translation files
+const processedEnTranslations = processTranslations(enTranslations);
+const processedSkTranslations = processTranslations(skTranslations);
+
+// Clear the translation cache before initialization
+clearTranslationCache();
+
 // Initialize i18next
 i18n
   .use(LanguageDetector)
@@ -151,18 +315,32 @@ i18n
     resources: {
       en: {
         translation: {
-          ...enTranslations,
-          ...legacyTranslations.en
+          ...processedEnTranslations,
+          ...legacyTranslations.en,
+          // Add missing translations for error messages
+          dataNotAvailable: "No data available. Please select a location and time range.",
+          trySelectingAnother: "Try selecting another location or time range",
+          refreshPage: "Refresh Page"
         }
       },
       sk: {
         translation: {
-          ...skTranslations,
-          ...legacyTranslations.sk
+          ...processedSkTranslations,
+          ...legacyTranslations.sk,
+          // Add missing translations for error messages
+          dataNotAvailable: "Žiadne dostupné údaje. Vyberte lokalitu a časový rozsah.",
+          trySelectingAnother: "Skúste vybrať inú lokalitu alebo časový rozsah",
+          refreshPage: "Obnoviť stránku"
         }
       }
     },
-    fallbackLng: 'sk',
+    fallbackLng: {
+      'sk-SK': ['sk'],
+      'en-US': ['en'],
+      'en-GB': ['en'],
+      default: ['sk'] // Changed from 'en' to 'sk' to make Slovak the default
+    },
+    lng: 'sk', // Force Slovak as the initial language
     debug: isLoggingEnabled(),
     
     interpolation: {
@@ -170,9 +348,11 @@ i18n
     },
     
     detection: {
-      order: ['localStorage', 'navigator'],
-      lookupLocalStorage: 'language',
+      order: ['querystring', 'localStorage', 'navigator', 'htmlTag'],
+      lookupQuerystring: 'lng',
+      lookupLocalStorage: 'i18nextLng',
       caches: ['localStorage'],
+      cookieMinutes: 160
     },
     
     // Silence initialization logs
@@ -184,4 +364,21 @@ i18n
     }
   });
 
-export default i18n; 
+// Set the default language to Slovak after initialization
+window.addEventListener('DOMContentLoaded', () => {
+  // This will ensure Slovak is set as default even after page refresh
+  if (i18n.language !== 'sk') {
+    i18n.changeLanguage('sk');
+  }
+});
+
+// Export a reload function to force refresh translations
+export const reloadTranslations = () => {
+  const currentLang = i18n.language;
+  clearTranslationCache();
+  i18n.reloadResources().then(() => {
+    i18n.changeLanguage(currentLang);
+  });
+};
+
+export default i18n;

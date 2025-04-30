@@ -4,11 +4,18 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import config from "./config";
 import { useNavigate, Link } from "react-router-dom";
+import i18n, { reloadTranslations } from "./i18n"; // Import reloadTranslations
+
+// Force language to Slovak
+i18n.changeLanguage('sk');
+console.log("Forced language to:", i18n.language);
+
 import { 
   AggregationCard, 
   SensorCard, 
   ErrorBoundary, 
-  ErrorDisplay 
+  ErrorDisplay,
+  ReavizHeatMap
 } from "./components";
 import { 
   useWindowDimensions,
@@ -70,11 +77,13 @@ function DashboardContent() {
   const { 
     chartMode, 
     visibleGraphs, 
+    toggleGraph,
     thresholds, 
     heatmapThresholds, 
     displayThresholds,
-    heatmapType,
     showHeatmapXLabels,
+    heatmapType,
+    heatmapField,
     aggregationOptions
   } = useChart();
   
@@ -90,6 +99,24 @@ function DashboardContent() {
   // Get language translation function
   const { t } = useTranslation();
   
+  // Reload translations on mount to ensure fresh translations
+  useEffect(() => {
+    reloadTranslations();
+  }, []);
+  
+  // Debug: Log current i18n language and loaded resources
+  useEffect(() => {
+    // Dynamically import i18n to avoid circular dependency
+    import('./i18n').then(({ default: i18n }) => {
+      // Print current language
+      console.log('[i18n debug] Current language:', i18n.language);
+      // Print loaded resources (only keys for brevity)
+      console.log('[i18n debug] Loaded resources:', Object.keys(i18n.services.resourceStore.data));
+      // Print a sample translation for heatmap.temperatureMatrix
+      console.log('[i18n debug] Sample translation (heatmap.temperatureMatrix):', i18n.t('heatmap.temperatureMatrix'));
+    });
+  }, []);
+  
   // Authentication
   const auth = useAuth(errorHandler);
   
@@ -103,7 +130,8 @@ function DashboardContent() {
     autoRefresh,
     customStart,
     customEnd,
-    customApplied
+    customApplied,
+    heatmapField
   }, errorHandler);
   
   const {
@@ -485,60 +513,48 @@ function DashboardContent() {
 
               {visibleGraphs.koberec && (
                 <div className="mb-8 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                  {heatmapType === "matrix" ? (
-                    <Suspense fallback={<LoadingIndicator text={t("loadingHeatmap") || "Loading heatmap..."} />}>
-                      <ApexChart
-                        title={t("heatmap") + " - Matrix"}
-                        series={optimizedHeatmapSeries}
-                        chartType="heatmap"
-                        thresholds={heatmapThresholds || DEFAULT_HEATMAP_THRESHOLDS}
-                        customHeight={rangeKey === "365d" ? windowHeight * 0.95 : 400}
-                        customWidth={rangeKey === "365d" ? dynamicHeatmapWidth : undefined}
-                        allowFullScreen={true}
-                        showXAxisLabels={showHeatmapXLabels}
-                        additionalOptions={sharedChartOptions}
-                      />
-                    </Suspense>
-                  ) : (
-                    <>
-                      {isMultiYear ? (
-                        Object.entries(splitDataByYear(
-                          prepareCalendarData(heatmapSeries), 
-                          rangeKey === "custom" ? customStart : null, 
-                          rangeKey === "custom" ? customEnd : null
-                        )).map(
-                          ([year, yearData]) => (
-                            <Suspense key={year} fallback={<LoadingIndicator text={`Loading ${year} heatmap...`} />}>
-                              <LazyYearHeatmap
-                                year={year}
-                                data={yearData && yearData.length > 0 ? yearData : []}
-                                thresholds={heatmapThresholds || DEFAULT_HEATMAP_THRESHOLDS}
-                                fixedDays={365}
-                              />
-                            </Suspense>
-                          )
-                        )
-                      ) : (
-                        (() => {
-                          const calendarData = prepareCalendarData(heatmapSeries);
-                          return calendarData && calendarData.length > 0 ? (
-                            <Suspense fallback={<LoadingIndicator text={t("loadingCalendarHeatmap") || "Loading calendar heatmap..."} />}>
-                              <CalendarHeatmapChart
-                                data={calendarData}
-                                startDate={rangeKey === "custom" && customApplied 
-                                  ? new Date(customStart) 
-                                  : getCalendarStart(rangeKey)}
-                                thresholds={heatmapThresholds || DEFAULT_HEATMAP_THRESHOLDS}
-                                fixedDays={rangeKey === "custom" ? undefined : 365}
-                              />
-                            </Suspense>
-                          ) : (
-                            <div className="p-4 text-center text-gray-500">{t("noData")}</div>
-                          );
-                        })()
-                      )}
-                    </>
-                  )}
+                  <Suspense fallback={<LoadingIndicator text={t("loadingHeatmap") || "Loading heatmap..."} />}>
+                    {(() => {
+                      // Still keep this for backwards compatibility with any other components that might use it
+                      window.dashboardState = {
+                        historicalChartData,
+                        selectedLocations,
+                        thresholds: heatmapThresholds || DEFAULT_HEATMAP_THRESHOLDS
+                      };
+                      const event = new CustomEvent('dashboardStateUpdated');
+                      window.dispatchEvent(event);
+                      
+                      // For 30d and 365d, respect the toggle (default for 30d is matrix, but user can switch)
+                      if (heatmapType === "calendar") {
+                        // Pass necessary data to CalendarHeatmapChart
+                        const calendarData = prepareCalendarData(optimizedHeatmapSeries);
+                        const calendarStartDate = getCalendarStart(rangeKey);
+                        const calendarEndDate = new Date(); // Current date as end date
+                        
+                        return <CalendarHeatmapChart 
+                          data={calendarData}
+                          startDate={customApplied ? new Date(customStart) : calendarStartDate}
+                          endDate={customApplied ? new Date(customEnd) : calendarEndDate}
+                          thresholds={heatmapThresholds || DEFAULT_HEATMAP_THRESHOLDS}
+                          heatmapField={heatmapField}
+                        />;
+                      } else {
+                        // Pass the data directly as props instead of relying on window.dashboardState
+                        return <ReavizHeatMap 
+                          showLabels={true}
+                          historicalData={historicalChartData}
+                          selectedLocations={selectedLocations}
+                          thresholds={heatmapThresholds || DEFAULT_HEATMAP_THRESHOLDS}
+                          // Pass range information for days calculation
+                          rangeKey={rangeKey}
+                          customStart={customStart}
+                          customEnd={customEnd}
+                          customApplied={customApplied}
+                          heatmapField={heatmapField}
+                        />;
+                      }
+                    })()}
+                  </Suspense>
                 </div>
               )}
             </section>

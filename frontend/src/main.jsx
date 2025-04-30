@@ -6,8 +6,15 @@ import LoadingIndicator from './components/LoadingIndicator';
 import ProtectedRoute from './ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 
+// Import moment.js and Slovak locale
+import moment from 'moment';
+import 'moment/locale/sk'; // Import Slovak locale
+
 // Import i18n configuration
 import './i18n';
+
+// Initialize moment with Slovak locale support
+moment.locale('sk'); // This sets default, will be overridden as needed
 
 // Import logger utilities
 import './utils/toggleLogs';
@@ -40,7 +47,7 @@ const LoginPage = lazy(() => import('./LoginPage'));
 // Create fallback loading state
 const LoadingFallback = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-100">
-    <LoadingIndicator size="large" text="Loading application..." />
+    <LoadingIndicator size="large" text="Načítavam aplikáciu..." />
   </div>
 );
 

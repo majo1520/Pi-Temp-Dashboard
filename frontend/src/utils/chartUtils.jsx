@@ -1,4 +1,6 @@
 // Utility functions for chart data processing and transformations
+import { useTranslation } from 'react-i18next';
+import i18next from 'i18next';
 
 // =============================
 // Pomocné funkcie
@@ -131,11 +133,23 @@ export function getTeplotaAnnotations(t) {
   const colorMid = t.colorMid ?? '#FFFF99';
   const colorHigh = t.colorHigh ?? '#FF9999';
   
+  // Get translations from i18next
+  const thresholdMin = i18next.t('thresholdMin', 'Min');
+  const thresholdMid = i18next.t('thresholdMid', 'Mid');
+  const thresholdHigh = i18next.t('thresholdHigh', 'High');
+  
   return [
     {
       y: 0,
       y2: min,
-      label: { text: "Min" },
+      label: { 
+        text: thresholdMin,
+        position: 'right',
+        offsetX: 5,
+        style: {
+          background: 'transparent'
+        }
+      },
       borderColor: "transparent",
       fillColor: colorMin,
       opacity: 0.1,
@@ -143,7 +157,14 @@ export function getTeplotaAnnotations(t) {
     {
       y: min,
       y2: mid,
-      label: { text: "Mid" },
+      label: { 
+        text: thresholdMid,
+        position: 'right',
+        offsetX: 5,
+        style: {
+          background: 'transparent'
+        }
+      },
       borderColor: "transparent",
       fillColor: colorMid,
       opacity: 0.1,
@@ -151,7 +172,15 @@ export function getTeplotaAnnotations(t) {
     {
       y: mid,
       y2: 9999,
-      label: { text: "High" },
+      label: { 
+        text: thresholdHigh,
+        position: 'right',
+        offsetX: 5,
+        offsetY: 13,  // Increased from 12 to 13 pixels
+        style: {
+          background: 'transparent'
+        }
+      },
       borderColor: "transparent",
       fillColor: colorHigh,
       opacity: 0.1,
@@ -172,11 +201,23 @@ export function getHumidityAnnotations(h) {
   const colorMid = h.colorMid ?? '#FFFF99';
   const colorHigh = h.colorHigh ?? '#FF9999';
   
+  // Get translations from i18next
+  const thresholdMin = i18next.t('thresholdMin', 'Min');
+  const thresholdMid = i18next.t('thresholdMid', 'Mid');
+  const thresholdHigh = i18next.t('thresholdHigh', 'High');
+  
   return [
     {
       y: 0,
       y2: min,
-      label: { text: "Min" },
+      label: { 
+        text: thresholdMin,
+        position: 'right',
+        offsetX: 5,
+        style: {
+          background: 'transparent'
+        }
+      },
       borderColor: "transparent",
       fillColor: colorMin,
       opacity: 0.1,
@@ -184,7 +225,14 @@ export function getHumidityAnnotations(h) {
     {
       y: min,
       y2: mid,
-      label: { text: "Mid" },
+      label: { 
+        text: thresholdMid,
+        position: 'right',
+        offsetX: 5,
+        style: {
+          background: 'transparent'
+        }
+      },
       borderColor: "transparent",
       fillColor: colorMid,
       opacity: 0.1,
@@ -192,7 +240,15 @@ export function getHumidityAnnotations(h) {
     {
       y: mid,
       y2: 100,
-      label: { text: "High" },
+      label: { 
+        text: thresholdHigh,
+        position: 'right',
+        offsetX: 5,
+        offsetY: 13,  // Increased from 12 to 13 pixels
+        style: {
+          background: 'transparent'
+        }
+      },
       borderColor: "transparent",
       fillColor: colorHigh,
       opacity: 0.1,
@@ -213,11 +269,23 @@ export function getPressureAnnotations(p) {
   const colorMid = p.colorMid ?? '#FFFF99';
   const colorHigh = p.colorHigh ?? '#FF9999';
   
+  // Get translations from i18next
+  const thresholdMin = i18next.t('thresholdMin', 'Min');
+  const thresholdMid = i18next.t('thresholdMid', 'Mid');
+  const thresholdHigh = i18next.t('thresholdHigh', 'High');
+  
   return [
     {
       y: 0,
       y2: min,
-      label: { text: "Min" },
+      label: { 
+        text: thresholdMin,
+        position: 'right',
+        offsetX: 5,
+        style: {
+          background: 'transparent'
+        }
+      },
       borderColor: "transparent",
       fillColor: colorMin,
       opacity: 0.1,
@@ -225,7 +293,14 @@ export function getPressureAnnotations(p) {
     {
       y: min,
       y2: mid,
-      label: { text: "Mid" },
+      label: { 
+        text: thresholdMid,
+        position: 'right',
+        offsetX: 5,
+        style: {
+          background: 'transparent'
+        }
+      },
       borderColor: "transparent",
       fillColor: colorMid,
       opacity: 0.1,
@@ -233,7 +308,15 @@ export function getPressureAnnotations(p) {
     {
       y: mid,
       y2: 1100,
-      label: { text: "High" },
+      label: { 
+        text: thresholdHigh,
+        position: 'right',
+        offsetX: 5,
+        offsetY: 13,  // Increased from 12 to 13 pixels
+        style: {
+          background: 'transparent'
+        }
+      },
       borderColor: "transparent",
       fillColor: colorHigh,
       opacity: 0.1,
@@ -330,7 +413,14 @@ export function prepareCalendarData(heatmapSeries) {
 
 export function getCalendarStart(rangeKey) {
   const d = new Date();
-  d.setDate(d.getDate() - (rangeKey === "365d" ? 365 : 30));
+  if (rangeKey === "365d") {
+    d.setDate(d.getDate() - 365);
+  } else if (rangeKey === "180d") {
+    d.setDate(d.getDate() - 180);
+  } else {
+    // Default to 30d for other ranges
+    d.setDate(d.getDate() - 30);
+  }
   return d;
 }
 
@@ -348,4 +438,4 @@ export function splitDataByYear(data, startDate, endDate) {
     }
   });
   return yearlyData;
-} 
+}

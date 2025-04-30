@@ -401,6 +401,19 @@ sudo systemctl start iot-dashboard
 
 Access the dashboard at http://localhost:5000
 
+## Recent Updates
+
+### Calendar Heatmap Improvements
+
+The following improvements have been made to the calendar heatmap functionality:
+
+- **180-day Filter Support**: The calendar heatmap now properly supports the 180-day filter range. Previously, this range would not display correctly in calendar view.
+- **Enhanced Data Sampling**: Added optimized data sampling for 180-day view (3-hour intervals) for improved performance and visual clarity.
+- **Automatic Mode Selection**: The system now automatically selects the appropriate heatmap type (matrix or calendar) based on the selected time range. The 180-day range now defaults to calendar view like 30-day and 365-day ranges.
+- **Improved Tooltip Display**: Tooltips in the calendar heatmap now correctly show values with appropriate units (°C, %, hPa) based on the selected field type (temperature, humidity, pressure).
+
+These changes make the calendar heatmap more versatile, allowing users to visualize medium-term trends in temperature, humidity, and pressure data with the most appropriate visualization method.
+
 ## Advanced Configuration
 
 ### Enhanced Logging System

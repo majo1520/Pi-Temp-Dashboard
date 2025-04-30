@@ -53,11 +53,12 @@ function Sidebar() {
     displayThresholds,
     toggleDisplayThresholds,
     
-    // Heatmap settings
-    showHeatmapXLabels,
-    setShowHeatmapXLabels,
+    // Heatmap settings - removed showHeatmapXLabels and setShowHeatmapXLabels
     heatmapType,
     setHeatmapType,
+    updateHeatmapType,
+    heatmapField,
+    setHeatmapField,
     
     // Aggregation
     aggregationOptions,
@@ -77,7 +78,8 @@ function Sidebar() {
     
     // Helper functions
     handleKobercovyToggle,
-    handleOtherGraphToggle
+    handleOtherGraphToggle,
+    setPreferMatrixHeatmap
   } = useChart();
   
   const { 
@@ -110,12 +112,12 @@ function Sidebar() {
               />
               <label htmlFor={key} className="ml-2 text-gray-700 dark:text-gray-200 capitalize cursor-pointer">
                 {key === "teplota"
-                  ? t('temperature')
+                  ? <span><span className="mr-1">🌡️</span>{t('temperature')}</span>
                   : key === "vlhkost"
-                  ? t('humidity')
+                  ? <span><span className="mr-1">💧</span>{t('humidity')}</span>
                   : key === "tlak"
-                  ? t('pressure')
-                  : t('heatmap')}
+                  ? <span><span className="mr-1">🧭</span>{t('pressure')}</span>
+                  : <span><span className="mr-1">🗺️</span>{t('heatmap')}</span>}
               </label>
             </div>
           ))}
@@ -206,7 +208,7 @@ function Sidebar() {
       <CollapsibleSection title={t('thresholdSettings')} icon="⚙️" defaultExpanded={false}>
         <div className="space-y-3">
           <div className="flex justify-between items-center">
-            <span className="text-gray-700 dark:text-gray-200">{t('temperature').replace('🌡️ ', '')}</span>
+            <span className="text-gray-700 dark:text-gray-200"><span className="mr-1">🌡️</span>{t('temperature')}</span>
             <button
               onClick={() => setShowTempThresholds((prev) => !prev)}
               className="px-3 py-1 text-xs rounded bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-700 transition-colors"
@@ -218,7 +220,7 @@ function Sidebar() {
           {showTempThresholds && (
             <div className="mt-2 p-3 bg-gray-100 dark:bg-gray-700 rounded">
               <ThresholdSettings 
-                title={t('temperature').replace('🌡️ ', '')}
+                title={"🌡️ " + t('temperature')}
                 thresholdValues={thresholds.teplota}
                 onUpdate={(newValues) => setThresholds(prev => ({
                   ...prev,
@@ -229,7 +231,7 @@ function Sidebar() {
           )}
           
           <div className="flex justify-between items-center">
-            <span className="text-gray-700 dark:text-gray-200">{t('humidity').replace('💧 ', '')}</span>
+            <span className="text-gray-700 dark:text-gray-200"><span className="mr-1">💧</span>{t('humidity')}</span>
             <button
               onClick={() => setShowHumidityThresholds((prev) => !prev)}
               className="px-3 py-1 text-xs rounded bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-700 transition-colors"
@@ -241,7 +243,7 @@ function Sidebar() {
           {showHumidityThresholds && (
             <div className="mt-2 p-3 bg-gray-100 dark:bg-gray-700 rounded">
               <ThresholdSettings 
-                title={t('humidity').replace('💧 ', '')}
+                title={"💧 " + t('humidity')}
                 thresholdValues={thresholds.vlhkost}
                 onUpdate={(newValues) => setThresholds(prev => ({
                   ...prev,
@@ -252,7 +254,7 @@ function Sidebar() {
           )}
           
           <div className="flex justify-between items-center">
-            <span className="text-gray-700 dark:text-gray-200">{t('pressure').replace('🧭 ', '')}</span>
+            <span className="text-gray-700 dark:text-gray-200"><span className="mr-1">🧭</span>{t('pressure')}</span>
             <button
               onClick={() => setShowPressureThresholds((prev) => !prev)}
               className="px-3 py-1 text-xs rounded bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-700 transition-colors"
@@ -264,7 +266,7 @@ function Sidebar() {
           {showPressureThresholds && (
             <div className="mt-2 p-3 bg-gray-100 dark:bg-gray-700 rounded">
               <ThresholdSettings 
-                title={t('pressure').replace('🧭 ', '')}
+                title={"🧭 " + t('pressure')}
                 thresholdValues={thresholds.tlak}
                 onUpdate={(newValues) => setThresholds(prev => ({
                   ...prev,
@@ -293,8 +295,60 @@ function Sidebar() {
       {/* Heatmap Settings Section */}
       <CollapsibleSection title={t('heatmapSettings')} icon="🗺️" defaultExpanded={false}>
         <div className="space-y-3">
+          {/* Matrix/Calendar switch button - moved outside of collapsible area for better visibility */}
+          <div className="mb-3">
+            <button
+              onClick={() => {
+                const newType = heatmapType === "matrix" ? "calendar" : "matrix";
+                updateHeatmapType(newType);
+              }}
+              className="w-full px-3 py-2 rounded bg-indigo-100 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-200 hover:bg-indigo-200 dark:hover:bg-indigo-700 transition-colors text-sm font-medium"
+            >
+              {heatmapType === "matrix" ? t('switchToCalendar') : t('switchToMatrix')}
+            </button>
+          </div>
+          
+          {/* Field type selector for heatmap */}
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              {t('dataType') || 'Data Type'}:
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => setHeatmapField("teplota")}
+                className={`px-2 py-1 text-sm rounded-md transition-colors ${
+                  heatmapField === "teplota" 
+                    ? "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-200" 
+                    : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                }`}
+              >
+                <span className="mr-1">🌡️</span>{t('temperature')}
+              </button>
+              <button
+                onClick={() => setHeatmapField("vlhkost")}
+                className={`px-2 py-1 text-sm rounded-md transition-colors ${
+                  heatmapField === "vlhkost" 
+                    ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200" 
+                    : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                }`}
+              >
+                <span className="mr-1">💧</span>{t('humidity')}
+              </button>
+              <button
+                onClick={() => setHeatmapField("tlak")}
+                className={`px-2 py-1 text-sm rounded-md transition-colors ${
+                  heatmapField === "tlak" 
+                    ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-200" 
+                    : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                }`}
+              >
+                <span className="mr-1">🧭</span>{t('pressure')}
+              </button>
+            </div>
+          </div>
+          
           <div className="flex justify-between items-center">
-            <span className="text-gray-700 dark:text-gray-200">{t('heatmap').replace('📊 ', '')}</span>
+            <span className="text-gray-700 dark:text-gray-200"><span className="mr-1">🗺️</span>{t('heatmap')}</span>
             <button
               onClick={() => setShowHeatmapSettings((prev) => !prev)}
               className="px-3 py-1 text-xs rounded bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-700 transition-colors"
@@ -306,32 +360,10 @@ function Sidebar() {
           {showHeatmapSettings && (
             <div className="mt-2 p-3 bg-gray-100 dark:bg-gray-700 rounded">
               <ThresholdSettings 
-                title={t('heatmap').replace('📊 ', '')}
+                title={"🗺️ " + t('heatmap')}
                 thresholdValues={heatmapThresholds}
                 onUpdate={setHeatmapThresholds}
               />
-              
-              <div className="mt-3 flex items-center">
-                <input
-                  type="checkbox"
-                  id="heatmap-labels"
-                  checked={showHeatmapXLabels}
-                  onChange={(e) => setShowHeatmapXLabels(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                />
-                <label htmlFor="heatmap-labels" className="ml-2 text-sm text-gray-700 dark:text-gray-200">
-                  {t('showDayLabels')}
-                </label>
-              </div>
-              
-              <div className="mt-3">
-                <button
-                  onClick={() => setHeatmapType((prev) => (prev === "matrix" ? "calendar" : "matrix"))}
-                  className="w-full px-3 py-2 rounded bg-indigo-100 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-200 hover:bg-indigo-200 dark:hover:bg-indigo-700 transition-colors text-sm"
-                >
-                  {heatmapType === "matrix" ? t('switchToCalendar') : t('switchToMatrix')}
-                </button>
-              </div>
             </div>
           )}
         </div>
@@ -385,4 +417,4 @@ function Sidebar() {
   );
 }
 
-export default React.memo(Sidebar); 
+export default React.memo(Sidebar);

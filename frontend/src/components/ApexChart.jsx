@@ -15,7 +15,6 @@ const PERFORMANCE_CATEGORY = 'apex_chart';
 const RENDER_METRIC = 'render_time';
 const UPDATE_METRIC = 'update_time';
 const INTERACTION_METRIC = 'interaction_time';
-const USER_INTERACTION_TIMEOUT = 10000; // 10 seconds timeout for user interaction
 
 // =============================
 // Komponent ApexChart
@@ -34,7 +33,7 @@ function ApexChart({
   showXAxisLabels,
   additionalOptions = {}
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { locationColors, thresholds: contextThresholds } = useChart();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [fullScreen, setFullScreen] = useState(false);
@@ -135,12 +134,9 @@ function ApexChart({
   useEffect(() => {
     // Only run this when we have a chart instance and the series data changes
     if (chartInstanceRef.current && isChartLoaded && savedRangeRef.current) {
-      // Check if the user interaction timeout has elapsed
-      const now = Date.now();
-      const timeSinceLastInteraction = now - lastInteractionTimeRef.current;
-      
-      if (userInteractedRef.current && timeSinceLastInteraction < USER_INTERACTION_TIMEOUT) {
-        // If the user has interacted recently, restore their view
+      // If the user has interacted and we have a saved range, restore it
+      // Always maintain zoom during auto-refresh updates (when window.__isAutoRefreshUpdate is true)
+      if (userInteractedRef.current || window.__isAutoRefreshUpdate) {
         try {
           const { minX, maxX } = savedRangeRef.current;
           
@@ -150,7 +146,7 @@ function ApexChart({
               logger.log('Restoring saved chart range', { 
                 minX, maxX, 
                 category: 'chart_interaction',
-                timeSince: timeSinceLastInteraction
+                isAutoRefresh: window.__isAutoRefreshUpdate
               });
               
               // Use updateOptions to update the chart without redrawing
@@ -165,14 +161,6 @@ function ApexChart({
         } catch (err) {
           logger.error('Error restoring chart range', err);
         }
-      } else if (timeSinceLastInteraction >= USER_INTERACTION_TIMEOUT) {
-        // Reset the interaction state if timeout has elapsed
-        userInteractedRef.current = false;
-        savedRangeRef.current = null;
-        logger.log('User interaction timed out, resetting chart view state', { 
-          category: 'chart_interaction',
-          timeout: USER_INTERACTION_TIMEOUT 
-        });
       }
     }
   }, [series, isChartLoaded]);
@@ -280,17 +268,20 @@ function ApexChart({
     }
   }, [isChartLoaded, chartType, series]);
 
-  // Translate field names and titles
-  const getTranslatedTitle = useCallback((originalTitle) => {
-    if (originalTitle === "teplota") return t('temperature').replace('🌡️ ', '');
-    if (originalTitle === "vlhkost") return t('humidity').replace('💧 ', '');
-    if (originalTitle === "tlak") return t('pressure').replace('🧭 ', '');
-    if (originalTitle === "Zlúčený graf") return "Zlúčené";
-    if (originalTitle === "Kobercový graf - Matrix Heatmap") return t('heatmap').replace('📊 ', '') + ' - Matrix';
-    return originalTitle;
-  }, [t]);
-
-  const translatedTitle = useMemo(() => getTranslatedTitle(title), [getTranslatedTitle, title]);
+  // Translate the title with appropriate icons
+  const translatedTitle = useMemo(() => {
+    if (title) {
+      // Check if the title corresponds to temperature, humidity, or pressure
+      if (title.toLowerCase().includes(t('temperature').toLowerCase())) {
+        return "🌡️ " + t('temperature');
+      } else if (title.toLowerCase().includes(t('humidity').toLowerCase())) {
+        return "💧 " + t('humidity');
+      } else if (title.toLowerCase().includes(t('pressure').toLowerCase())) {
+        return "🧭 " + t('pressure');
+      }
+    }
+    return title;
+  }, [title, t]);
 
   // Apply location colors to chart series with improved handling
   const colorizedSeries = useMemo(() => {
@@ -383,7 +374,27 @@ function ApexChart({
         fontFamily: "Arial, sans-serif",
         background: fullScreen ? "#1a1a1a" : "transparent",
         events: {
-          mounted: initChartInstance
+          mounted: initChartInstance,
+          // Add updated event handler to preserve zoom state
+          updated: function(chartContext, config) {
+            // If we have a saved range and the user has interacted with the chart, restore it
+            if (savedRangeRef.current && userInteractedRef.current && chartInstanceRef.current) {
+              const { minX, maxX } = savedRangeRef.current;
+              
+              // Delay the restore slightly to ensure chart is fully updated
+              setTimeout(() => {
+                if (chartInstanceRef.current) {
+                  logger.log('Restoring zoom after chart update', { minX, maxX });
+                  chartInstanceRef.current.updateOptions({
+                    xaxis: {
+                      min: minX,
+                      max: maxX
+                    }
+                  }, false, false);
+                }
+              }, 100);
+            }
+          }
         }
       },
       dataLabels: {
@@ -702,7 +713,7 @@ function ApexChart({
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  // Add custom CSS to position toolbar icons higher
+  // Add custom CSS to position toolbar icons higher and improve zoom persistence
   useEffect(() => {
     const style = document.createElement('style');
     style.innerHTML = `
@@ -727,6 +738,23 @@ function ApexChart({
       .apexcharts-series-markers {
         opacity: 1 !important;
         visibility: visible !important;
+      }
+      
+      /* Prevent chart from auto-zooming out */
+      .apexcharts-canvas.apexcharts-zoom-enabled .apexcharts-reset-zoom-icon {
+        visibility: visible !important;
+      }
+      .apexcharts-canvas.apexcharts-zoom-enabled .apexcharts-selection-icon,
+      .apexcharts-canvas.apexcharts-zoom-enabled .apexcharts-zoom-icon {
+        visibility: visible !important;
+      }
+      .apexcharts-canvas.apexcharts-zoom-enabled.apexcharts-theme-light .apexcharts-selection-rect {
+        fill: rgba(80, 110, 228, 0.1) !important;
+        stroke: rgba(80, 110, 228, 0.4) !important;
+      }
+      .apexcharts-canvas.apexcharts-zoom-enabled.apexcharts-theme-dark .apexcharts-selection-rect {
+        fill: rgba(80, 110, 228, 0.3) !important;
+        stroke: rgba(80, 110, 228, 0.6) !important;
       }
     `;
     document.head.appendChild(style);
@@ -927,4 +955,4 @@ function ApexChart({
   );
 }
 
-export default ApexChart; 
+export default ApexChart;

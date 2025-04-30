@@ -482,11 +482,11 @@ async function getLastStartTimeFromInflux(location) {
 // Function to get actual uptime by finding when the sensor was continuously online
 async function getActualStartTimeFromInflux(name) {
   try {
-    // Query for data points in the past 3 days with a more reliable approach
+    // Query for data points in the past 30 days with a more reliable approach
     // Look for the most recent gap > 10 minutes
     const query = `
       from(bucket: "${BUCKET}")
-        |> range(start: -3d)  // Reduce from 30 days to 3 days for more reliable recent restart detection
+        |> range(start: -30d)  // Increased from 3d to 30d to track longer uptime periods
         |> filter(fn: (r) => r._measurement == "bme280" and r.location == "${name}")
         |> filter(fn: (r) => r._field == "teplota")
         |> sort(columns: ["_time"], desc: false)
@@ -515,11 +515,11 @@ async function getActualStartTimeFromInflux(name) {
     const lines = text.split("\n").filter(line => line && !line.startsWith("#"));
     
     if (lines.length < 2) {
-      // If no restart found in past 3 days, get the first data point of the most recent continuous series
+      // If no restart found in past 30 days, get the first data point of the most recent continuous series
       // This will find the most recent start time after a gap
       const latestSessionQuery = `
         from(bucket: "${BUCKET}")
-          |> range(start: -6h)  // Look at last 6 hours for a more accurate recent session
+          |> range(start: -30d)  // Increased from 6h to 30d to find the earliest data point in the continuous series
           |> filter(fn: (r) => r._measurement == "bme280" and r.location == "${name}")
           |> filter(fn: (r) => r._field == "teplota")
           |> sort(columns: ["_time"], desc: false)
@@ -655,7 +655,18 @@ app.get('/api/sensors/:name/history', async (req, res) => {
     } else {
       // Make sure "custom" doesn't get passed directly to InfluxDB
       const influxRange = (range === "custom") ? "24h" : range;
-      rangeClause = `range(start: -${influxRange})`;
+
+      // Ensure range is properly formatted for InfluxDB
+      // For durations: range(start: -7d)
+      // For timestamps: range(start: 2022-01-01T00:00:00Z, stop: 2022-01-08T00:00:00Z)
+      if (influxRange.match(/^\d+[dhms]$/)) {
+        // If it's a valid duration format like 7d, 24h, etc.
+        rangeClause = `range(start: -${influxRange})`;
+      } else {
+        // Default to 24h if not in the expected format
+        logger.warn(`Invalid range format: ${influxRange}, defaulting to 24h`);
+        rangeClause = `range(start: -24h)`;
+      }
     }
     
     if (aggregation && downsample) {
@@ -1852,6 +1863,14 @@ app.get('/api/notifications/telegram/settings', ensureAuthenticated, async (req,
     
     // Add thresholds for each location
     settings.forEach(setting => {
+      // Log raw value for debugging
+      logger.log(`Raw offline_notification_enabled for ${setting.location}: ${setting.offline_notification_enabled}`);
+      logger.log(`Type of offline_notification_enabled: ${typeof setting.offline_notification_enabled}`);
+      
+      // Convert to strict boolean - database stores as 0/1
+      const offlineEnabled = setting.offline_notification_enabled === 1;
+      logger.log(`Converted offlineNotificationsEnabled for ${setting.location}: ${offlineEnabled}`);
+      
       formattedSettings.thresholds[setting.location] = {
         temperature: {
           min: setting.temperature_min,
@@ -1870,9 +1889,14 @@ app.get('/api/notifications/telegram/settings', ensureAuthenticated, async (req,
           max: setting.pressure_max,
           enabled: !!setting.pressure_enabled,
           thresholdType: setting.pressure_threshold_type || 'range'
-        }
+        },
+        // Use the strictly converted boolean value
+        offlineNotificationsEnabled: offlineEnabled
       };
     });
+    
+    // Add debug logging
+    logger.log(`Response settings: ${JSON.stringify(formattedSettings, null, 2)}`);
     
     res.json(formattedSettings);
   } catch (error) {
@@ -1896,6 +1920,7 @@ app.post('/api/notifications/telegram/settings', ensureAuthenticated, async (req
     // Debug logging of request - only in non-production
     if (process.env.NODE_ENV !== 'production') {
       logger.log('POST /api/notifications/telegram/settings - Request received');
+      logger.log(`Request thresholds: ${JSON.stringify(thresholds, null, 2)}`);
     }
     
     if (!thresholds) {
@@ -1908,6 +1933,15 @@ app.post('/api/notifications/telegram/settings', ensureAuthenticated, async (req
     // Process each location from the thresholds
     const updatePromises = Object.keys(thresholds).map(async (location) => {
       const locationThresholds = thresholds[location];
+      
+      // Debug log each location's settings
+      logger.log(`Processing location: ${location}`);
+      logger.log(`Raw offlineNotificationsEnabled: ${locationThresholds.offlineNotificationsEnabled}`);
+      logger.log(`Type of offlineNotificationsEnabled: ${typeof locationThresholds.offlineNotificationsEnabled}`);
+      
+      // Handle offlineNotificationsEnabled - ensure it's a boolean and then convert to 0/1 for database
+      const offlineEnabled = locationThresholds.offlineNotificationsEnabled === true;
+      logger.log(`Processed offlineNotificationsEnabled: ${offlineEnabled}`);
       
       // Prepare settings object for this location
       const settings = {
@@ -1930,8 +1964,14 @@ app.post('/api/notifications/telegram/settings', ensureAuthenticated, async (req
         pressure_enabled: locationThresholds.pressure.enabled,
         pressure_min: locationThresholds.pressure.min,
         pressure_max: locationThresholds.pressure.max,
-        pressure_threshold_type: locationThresholds.pressure.thresholdType || 'range'
+        pressure_threshold_type: locationThresholds.pressure.thresholdType || 'range',
+        
+        // Use the strictly processed boolean value
+        offline_notification_enabled: offlineEnabled
       };
+      
+      // Log the final settings being saved
+      logger.log(`Final settings for location ${location}: offline_notification_enabled=${settings.offline_notification_enabled}`);
       
       // Update the settings in the database
       return notificationSettings.updateSettings(userId, location, settings);
@@ -2187,6 +2227,9 @@ app.post('/api/notifications/telegram/notify', ensureAuthenticated, async (req, 
 // Track the last time a notification was sent for each location
 const lastNotificationTimestamps = {};
 
+// Track the last known online status of each sensor
+const sensorOnlineStatus = {};
+
 // Monitoring system that checks sensor values and sends notifications
 async function checkSensorThresholds() {
   try {
@@ -2228,6 +2271,181 @@ async function checkSensorThresholds() {
       if (!TELEGRAM_BOT_TOKEN) {
         logger.error('Telegram bot token not configured');
         return;
+      }
+      
+      // Check for offline sensors
+      try {
+        const OFFLINE_THRESHOLD = 10 * 60 * 1000; // 10 minutes threshold
+        const locations = await fetchSensorLocations();
+        const now = Date.now();
+        
+        // Get sensor statuses
+        const sensorStatuses = await Promise.all(
+          locations.map(async (name) => {
+            // Get the last seen timestamp
+            const lastSeen = await getLastSeenFromInflux(name);
+            
+            // Calculate if the sensor is online based on the 10-minute threshold
+            const lastSeenTime = lastSeen ? new Date(lastSeen).getTime() : 0;
+            const timeSinceLastSeen = lastSeen ? now - lastSeenTime : null;
+            const isOnline = lastSeen && timeSinceLastSeen < OFFLINE_THRESHOLD;
+            
+            return {
+              name,
+              lastSeen,
+              online: isOnline,
+              timeSinceLastSeen
+            };
+          })
+        );
+        
+        // Check each sensor status for changes from online to offline
+        for (const sensorStatus of sensorStatuses) {
+          const { name, online, lastSeen } = sensorStatus;
+          const previouslyOnline = sensorOnlineStatus[name] !== false; // Default to true if not set
+          
+          // Update status in our tracking object
+          const previousStatus = sensorOnlineStatus[name];
+          sensorOnlineStatus[name] = online;
+          
+          // Check if sensor just went offline and needs notification
+          if (previousStatus === true && !online) {
+            logger.log(`Sensor ${name} appears to have gone offline. Last seen: ${lastSeen}`);
+            
+            // For each user with offline notifications enabled for this location
+            const allSettings = await notificationSettings.getAllSettings();
+            const offlineNotificationSettings = allSettings.filter(
+              setting => 
+                setting.location === name && 
+                setting.enabled && 
+                setting.offline_notification_enabled
+            );
+            
+            // Send notification to each user who has enabled offline notifications
+            for (const setting of offlineNotificationSettings) {
+              const notificationKey = `${setting.user_id}-${name}-offline`;
+              const now = Date.now();
+              const lastNotificationTime = lastNotificationTimestamps[notificationKey] || 0;
+              const notificationFrequency = setting.notification_frequency_minutes * 60 * 1000;
+              
+              // Check if we've sent a notification recently for this condition
+              if (now - lastNotificationTime < notificationFrequency) {
+                logger.log(`Skipping offline notification for ${name} - notification was sent recently`);
+                continue;
+              }
+              
+              // Format time based on language
+              const lang = setting.notification_language || 'en';
+              const lastSeenFormatted = new Date(lastSeen).toLocaleString(
+                lang === 'sk' ? 'sk-SK' : 'en-US', 
+                { 
+                  dateStyle: 'medium', 
+                  timeStyle: 'medium' 
+                }
+              );
+              
+              // Create notification message for offline sensor
+              const message = lang === 'sk' 
+                ? `🔴 UPOZORNENIE: Senzor ${name} je offline!\n\nPosledný záznam: ${lastSeenFormatted}`
+                : `🔴 ALERT: Sensor ${name} has gone offline!\n\nLast seen: ${lastSeenFormatted}`;
+              
+              try {
+                // Send notification via Telegram
+                const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+                const telegramResponse = await fetch(telegramUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    chat_id: setting.chat_id,
+                    text: message,
+                  }),
+                });
+                
+                const telegramData = await telegramResponse.json();
+                
+                if (telegramData.ok) {
+                  logger.log(`Offline notification sent successfully for ${name} to user ${setting.user_id}`);
+                  // Update timestamp to prevent notification spam
+                  lastNotificationTimestamps[notificationKey] = now;
+                } else {
+                  logger.error(`Failed to send offline notification for ${name}:`, telegramData.description);
+                }
+              } catch (error) {
+                logger.error(`Error sending offline notification for ${name}:`, error);
+              }
+            }
+          }
+          
+          // Check if sensor just came back online after being offline
+          if (previousStatus === false && online) {
+            logger.log(`Sensor ${name} appears to be back online. Last seen: ${lastSeen}`);
+            
+            // For each user with offline notifications enabled for this location
+            const allSettings = await notificationSettings.getAllSettings();
+            const offlineNotificationSettings = allSettings.filter(
+              setting => 
+                setting.location === name && 
+                setting.enabled && 
+                setting.offline_notification_enabled
+            );
+            
+            // Send online notification to each user who has enabled offline notifications
+            for (const setting of offlineNotificationSettings) {
+              const notificationKey = `${setting.user_id}-${name}-online`;
+              const now = Date.now();
+              const lastNotificationTime = lastNotificationTimestamps[notificationKey] || 0;
+              const notificationFrequency = setting.notification_frequency_minutes * 60 * 1000;
+              
+              // Check if we've sent a notification recently for this condition
+              if (now - lastNotificationTime < notificationFrequency) {
+                logger.log(`Skipping online notification for ${name} - notification was sent recently`);
+                continue;
+              }
+              
+              // Format time based on language
+              const lang = setting.notification_language || 'en';
+              const lastSeenFormatted = new Date(lastSeen).toLocaleString(
+                lang === 'sk' ? 'sk-SK' : 'en-US', 
+                { 
+                  dateStyle: 'medium', 
+                  timeStyle: 'medium' 
+                }
+              );
+              
+              // Create notification message for online sensor
+              const message = lang === 'sk' 
+                ? `✅ INFO: Senzor ${name} je znova online!\n\nPosledný záznam: ${lastSeenFormatted}`
+                : `✅ INFO: Sensor ${name} is back online!\n\nLast seen: ${lastSeenFormatted}`;
+              
+              try {
+                // Send notification via Telegram
+                const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+                const telegramResponse = await fetch(telegramUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    chat_id: setting.chat_id,
+                    text: message,
+                  }),
+                });
+                
+                const telegramData = await telegramResponse.json();
+                
+                if (telegramData.ok) {
+                  logger.log(`Online notification sent successfully for ${name} to user ${setting.user_id}`);
+                  // Update timestamp to prevent notification spam
+                  lastNotificationTimestamps[notificationKey] = now;
+                } else {
+                  logger.error(`Failed to send online notification for ${name}:`, telegramData.description);
+                }
+              } catch (error) {
+                logger.error(`Error sending online notification for ${name}:`, error);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        logger.error('Error checking offline sensors:', error);
       }
       
       // Group settings by location
@@ -2672,7 +2890,10 @@ app.post('/api/telegram/settings', ensureAuthenticated, async (req, res) => {
       pressure_min, 
       pressure_max,
       pressure_threshold_type,
-      notification_frequency_minutes
+      offline_notification_enabled,
+      notification_frequency_minutes,
+      notification_language,
+      send_charts
     } = req.body;
 
     // Validate required parameters
@@ -2700,7 +2921,10 @@ app.post('/api/telegram/settings', ensureAuthenticated, async (req, res) => {
       pressure_min,
       pressure_max,
       pressure_threshold_type,
-      notification_frequency_minutes: parseInt(notification_frequency_minutes, 10) || 30
+      offline_notification_enabled: offline_notification_enabled === true ? 1 : 0,
+      notification_frequency_minutes: parseInt(notification_frequency_minutes, 10) || 30,
+      notification_language: notification_language || 'en',
+      send_charts: send_charts === true ? 1 : 0
     });
 
     // Clear the notification timestamp when settings are updated

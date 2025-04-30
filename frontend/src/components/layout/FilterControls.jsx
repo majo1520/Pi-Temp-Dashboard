@@ -2,6 +2,7 @@ import React from 'react';
 import { useFilter } from '../../contexts/FilterContext';
 import { useChart } from '../../contexts/ChartContext';
 import { useTranslation } from 'react-i18next';
+import { RANGES } from '../../constants';
 
 /**
  * Component for filter controls (range selection, locations selection, etc)
@@ -71,7 +72,7 @@ function FilterControls({ visibleLocationSensors, locations }) {
         <div className="flex-1 bg-white dark:bg-gray-900 p-4 rounded shadow">
           <h2 className="text-lg font-medium mb-2">{t('timeRange')}</h2>
           <div className="flex gap-2 flex-wrap">
-            {["live", "1h", "6h", "24h", "7d", "30d", "365d", "custom"].map((range) => (
+            {Object.keys(RANGES).map((range) => (
               <button
                 key={range}
                 onClick={() => handleRangeSelection(range)}
@@ -84,7 +85,7 @@ function FilterControls({ visibleLocationSensors, locations }) {
                     : `${t('timeRange')}: ${range.toUpperCase()}`
                 }
               >
-                {range === "live" ? "🟢 " : "🕒 "}
+                {range === "live" ? "🟢" : "🕒" }
                 {range === "custom" ? t('custom') : range.toUpperCase()}
               </button>
             ))}
@@ -168,4 +169,4 @@ function ChartModeSelector() {
   );
 }
 
-export default React.memo(FilterControls); 
+export default React.memo(FilterControls);

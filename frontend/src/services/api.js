@@ -27,7 +27,27 @@ export async function getSensors() {
  * @returns {Promise<Array>} - Array of sensor data points
  */
 export async function getSensorHistory(sensorName, range = "24h") {
-  const response = await fetch(`${API_BASE_URL}/sensors/${sensorName}/history?range=${range}`);
+  // Validate the range format - must be in the format of [number][unit]
+  // where unit is one of: h, d, w, mo, y
+  const validRange = range.match(/^\d+[hdwmy]$/) ? range : "24h";
+  
+  // Map any non-standard formats to valid InfluxDB duration formats
+  let normalizedRange = validRange;
+  if (validRange.endsWith('w')) {
+    // Convert weeks to days (e.g., 1w -> 7d)
+    const weeks = parseInt(validRange);
+    normalizedRange = `${weeks * 7}d`;
+  } else if (validRange.endsWith('mo')) {
+    // Convert months to days (approximate)
+    const months = parseInt(validRange);
+    normalizedRange = `${months * 30}d`;
+  } else if (validRange.endsWith('y')) {
+    // Convert years to days
+    const years = parseInt(validRange);
+    normalizedRange = `${years * 365}d`;
+  }
+  
+  const response = await fetch(`${API_BASE_URL}/sensors/${sensorName}/history?range=${normalizedRange}`);
   if (!response.ok) {
     throw new Error('Failed to fetch sensor history');
   }
@@ -123,7 +143,8 @@ export async function getHistoricalData({ locations = [], timeRange = { rangeKey
   function getDownsampleInterval(rangeKey, customStart, customEnd) {
     // For live data, no downsampling
     if (rangeKey === 'live') return null;
-    
+    // For 30d matrix heatmap, always use 1h
+    if (rangeKey === '30d') return '1h';
     // For custom ranges, use the custom aggregator function
     if (rangeKey === 'custom' && customStart && customEnd) {
       return getCustomAggregator(customStart, customEnd);
@@ -667,31 +688,79 @@ export async function getTelegramSettings() {
 
 /**
  * Update Telegram notification settings
- * @param {Object} settings - Telegram settings
+ * @param {Object} settings - Settings object
  * @param {string} settings.chatId - Telegram chat ID
- * @param {boolean} settings.enabled - Global enabled state for notifications
- * @param {number} settings.notificationFrequency - How often to check and send notifications (in minutes)
- * @param {string} settings.notificationLanguage - Language for notifications ('en' or 'sk')
- * @param {boolean} settings.sendCharts - Whether to include charts in notifications
+ * @param {boolean} settings.enabled - Whether notifications are enabled
+ * @param {number} settings.notificationFrequency - Notification frequency in minutes
+ * @param {string} settings.notificationLanguage - Notification language (en/sk)
+ * @param {boolean} settings.sendCharts - Whether to send charts with notifications
  * @param {Object} settings.thresholds - Threshold settings by location
  * @returns {Promise<Object>} - Updated settings
  */
 export async function updateTelegramSettings(settings) {
-  const response = await fetch('/api/notifications/telegram/settings', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify(settings),
-  });
+  console.log('updateTelegramSettings - Input settings:', JSON.stringify(settings, null, 2));
   
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to update Telegram settings: ${error}`);
+  try {
+    // Process thresholds to ensure offlineNotificationsEnabled is handled correctly
+    const processedThresholds = {};
+    
+    // Process each location from the thresholds
+    Object.entries(settings.thresholds || {}).forEach(([location, locationThresholds]) => {
+      // Log each location's offline setting before processing
+      console.log(`Location ${location} - offlineNotificationsEnabled before processing:`, 
+                  locationThresholds.offlineNotificationsEnabled);
+      
+      processedThresholds[location] = {
+        temperature: locationThresholds.temperature || { enabled: false, min: 18, max: 28, thresholdType: 'range' },
+        humidity: locationThresholds.humidity || { enabled: false, min: 30, max: 70, thresholdType: 'range' },
+        pressure: locationThresholds.pressure || { enabled: false, min: 980, max: 1030, thresholdType: 'range' },
+        // Convert to boolean and ensure it's explicitly true or false, not undefined
+        offlineNotificationsEnabled: locationThresholds.offlineNotificationsEnabled === true
+      };
+      
+      // Log the processed setting
+      console.log(`Location ${location} - offlineNotificationsEnabled after processing:`, 
+                  processedThresholds[location].offlineNotificationsEnabled);
+    });
+    
+    const requestBody = {
+      chatId: settings.chatId,
+      enabled: settings.enabled,
+      thresholds: processedThresholds,
+      notificationFrequency: settings.notificationFrequency,
+      notificationLanguage: settings.notificationLanguage,
+      sendCharts: settings.sendCharts
+    };
+    
+    console.log('updateTelegramSettings - Processed request body:', JSON.stringify(requestBody, null, 2));
+    
+    // Send all locations in a single request matching the backend's expected format
+    const response = await fetch('/api/notifications/telegram/settings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(requestBody),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Error updating Telegram settings:', errorText);
+      throw new Error(`Failed to update Telegram settings: ${response.status} ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    console.log('Telegram settings update result:', result);
+    
+    // Refresh settings
+    const updatedSettings = await getTelegramSettings();
+    console.log('Refreshed settings after update:', JSON.stringify(updatedSettings, null, 2));
+    return updatedSettings;
+  } catch (error) {
+    console.error('Error in updateTelegramSettings:', error);
+    throw error;
   }
-  
-  return response.json();
 }
 
 /**
@@ -797,4 +866,4 @@ export async function sendTestChart(chatId, type, location, timeRangeMinutes = 6
     console.error('Error sending test chart:', error);
     throw error;
   }
-} 
+}

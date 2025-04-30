@@ -23,6 +23,34 @@ export function ChartProvider({ children }) {
   // Heatmap settings
   const [showHeatmapXLabels, setShowHeatmapXLabels] = useState(true);
   const [heatmapType, setHeatmapType] = useState("matrix");
+  const [preferMatrixHeatmap, setPreferMatrixHeatmap] = useState(true);
+  const [heatmapField, setHeatmapField] = useState("teplota"); // Default to temperature
+  
+  // Custom setHeatmapType function that also updates preferMatrixHeatmap
+  const updateHeatmapType = useCallback((type) => {
+    setHeatmapType(type);
+    if (type === "matrix" || type === "calendar") {
+      const isMatrix = type === "matrix";
+      setPreferMatrixHeatmap(isMatrix);
+      // Save preference to localStorage
+      try {
+        localStorage.setItem("preferMatrixHeatmap", JSON.stringify(isMatrix));
+        
+        // Also update dashboard settings
+        localStorage.setItem(
+          "dashboardSettings",
+          JSON.stringify({ 
+            chartMode,
+            visibleGraphs,
+            displayThresholds,
+            preferMatrixHeatmap: isMatrix
+          })
+        );
+      } catch (error) {
+        logger.error("Error saving heatmap preference:", error);
+      }
+    }
+  }, [chartMode, visibleGraphs, displayThresholds]);
   
   // Aggregation settings
   const [aggregationOptions, setAggregationOptions] = useState({
@@ -107,6 +135,7 @@ export function ChartProvider({ children }) {
         if (settings.chartMode) setChartMode(settings.chartMode);
         if (settings.visibleGraphs) setVisibleGraphs(settings.visibleGraphs);
         if (settings.displayThresholds !== undefined) setDisplayThresholds(settings.displayThresholds);
+        if (settings.preferMatrixHeatmap !== undefined) setPreferMatrixHeatmap(settings.preferMatrixHeatmap);
       } catch (error) {
         logger.error("Error loading dashboard settings:", error);
       }
@@ -243,13 +272,14 @@ export function ChartProvider({ children }) {
         JSON.stringify({ 
           chartMode,
           visibleGraphs,
-          displayThresholds
+          displayThresholds,
+          preferMatrixHeatmap
         })
       );
     } catch (error) {
       logger.error("Error saving dashboard settings:", error);
     }
-  }, [chartMode, visibleGraphs, displayThresholds]);
+  }, [chartMode, visibleGraphs, displayThresholds, preferMatrixHeatmap]);
   
   // Save thresholds whenever they change
   useEffect(() => {
@@ -365,7 +395,8 @@ export function ChartProvider({ children }) {
           JSON.stringify({ 
             chartMode,
             visibleGraphs: newState,
-            displayThresholds
+            displayThresholds,
+            preferMatrixHeatmap
           })
         );
       } catch (error) {
@@ -373,7 +404,7 @@ export function ChartProvider({ children }) {
       }
       return newState;
     });
-  }, [chartMode, displayThresholds]);
+  }, [chartMode, displayThresholds, preferMatrixHeatmap]);
   
   // Function to toggle aggregation options - optimized for performance
   const toggleAggregation = useCallback((type) => {
@@ -402,7 +433,8 @@ export function ChartProvider({ children }) {
           JSON.stringify({ 
             chartMode,
             visibleGraphs,
-            displayThresholds: newValue
+            displayThresholds: newValue,
+            preferMatrixHeatmap
           })
         );
       } catch (error) {
@@ -410,7 +442,7 @@ export function ChartProvider({ children }) {
       }
       return newValue;
     });
-  }, [chartMode, visibleGraphs]);
+  }, [chartMode, visibleGraphs, preferMatrixHeatmap]);
   
   // Update card styling settings
   const updateCardStyling = useCallback((newStyling) => {
@@ -541,26 +573,15 @@ export function ChartProvider({ children }) {
       setRangeKey(prevRange => prevRange === "live" ? "24h" : prevRange);
     }
     
-    // Save immediately to localStorage
-    try {
-      localStorage.setItem(
-        "dashboardSettings",
-        JSON.stringify({ 
-          chartMode: "separate",
-          visibleGraphs: updatedVisibleGraphs,
-          displayThresholds
-        })
-      );
-    } catch (error) {
-      logger.error("Error saving koberec confirmation:", error);
-    }
+    // Default to matrix heatmap type
+    updateHeatmapType("matrix");
     
     // Clear selected locations
     if (setSelectedLocations) {
       setSelectedLocations([]);
     }
     setShowKobercovyConfirmation(false);
-  }, [displayThresholds]);
+  }, [displayThresholds, updateHeatmapType]);
   
   // Provide all values and functions to consumers
   const value = {
@@ -568,7 +589,7 @@ export function ChartProvider({ children }) {
     chartMode,
     setChartMode,
     visibleGraphs,
-    toggleGraph,
+    setVisibleGraphs,
     
     // Thresholds
     thresholds,
@@ -579,10 +600,13 @@ export function ChartProvider({ children }) {
     toggleDisplayThresholds,
     
     // Heatmap settings
-    showHeatmapXLabels,
-    setShowHeatmapXLabels,
     heatmapType,
     setHeatmapType,
+    updateHeatmapType,
+    heatmapField,
+    setHeatmapField,
+    preferMatrixHeatmap,
+    setPreferMatrixHeatmap,
     
     // Aggregation
     aggregationOptions,
@@ -590,7 +614,7 @@ export function ChartProvider({ children }) {
     
     // Card styling
     cardStyling,
-    updateCardStyling,
+    setCardStyling,
     
     // Location colors
     locationColors,
@@ -630,4 +654,4 @@ export function useChart() {
     throw new Error('useChart must be used within a ChartProvider');
   }
   return context;
-} 
+}

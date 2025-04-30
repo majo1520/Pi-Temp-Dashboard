@@ -180,12 +180,22 @@ function useUserPreferences() {
   
   // Update heatmap type based on range
   useEffect(() => {
-    if (rangeKey === "custom") {
-      setHeatmapType("calendar");
-    } else if (rangeKey === "30d" || rangeKey === "365d") {
-      setHeatmapType("calendar");
-    } else {
+    // Only change heatmap type automatically if the user doesn't prefer matrix heatmap
+    const savedPreferMatrixHeatmap = localStorage.getItem("preferMatrixHeatmap");
+    const userPrefersMatrix = savedPreferMatrixHeatmap ? JSON.parse(savedPreferMatrixHeatmap) : true;
+    
+    if (userPrefersMatrix) {
+      // If user prefers matrix heatmap, always use matrix type
       setHeatmapType("matrix");
+    } else {
+      // Use calendar heatmap for longer time ranges only if user doesn't prefer matrix
+      if (rangeKey === "custom") {
+        setHeatmapType("calendar");
+      } else if (rangeKey === "30d" || rangeKey === "180d" || rangeKey === "365d") {
+        setHeatmapType("calendar");
+      } else {
+        setHeatmapType("matrix");
+      }
     }
   }, [rangeKey, customStart, customEnd]);
   
@@ -269,4 +279,4 @@ function useUserPreferences() {
   };
 }
 
-export default useUserPreferences; 
+export default useUserPreferences;

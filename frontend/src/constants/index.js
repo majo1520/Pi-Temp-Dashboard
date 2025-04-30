@@ -6,6 +6,7 @@ export const RANGES = {
   "24h": { label: "24h", flux: "-24h", interval: "10m" },
   "7d": { label: "7d", flux: "-7d", interval: "30m" },
   "30d": { label: "30d", flux: "-30d", interval: "1h" },
+  "180d": { label: "180d", flux: "-180d", interval: "3h" },
   "365d": { label: "365d", flux: "-365d", interval: "6h" },
   custom: { label: "Vlastný interval", flux: null, interval: "1m" },
 };
@@ -13,6 +14,7 @@ export const RANGES = {
 export const HEATMAP_AGGREGATORS = {
   "7d": "1h",
   "30d": "6h",
+  "180d": "12h",
   "365d": "24h",
   custom: "1h",
 };
@@ -42,4 +44,4 @@ export const DEFAULT_THRESHOLDS = {
     colorMid: "#FFFF99",
     colorHigh: "#FF9999",
   },
-}; 
+};

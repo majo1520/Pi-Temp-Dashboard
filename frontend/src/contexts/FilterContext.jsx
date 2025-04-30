@@ -31,9 +31,12 @@ export function FilterProvider({ children }) {
     chartContextRef.current = {
       visibleGraphs: chartContext.visibleGraphs,
       toggleGraph: chartContext.toggleGraph,
-      setHeatmapType: chartContext.setHeatmapType
+      setHeatmapType: chartContext.setHeatmapType,
+      updateHeatmapType: chartContext.updateHeatmapType,
+      preferMatrixHeatmap: chartContext.preferMatrixHeatmap
     };
-  }, [chartContext.visibleGraphs, chartContext.toggleGraph, chartContext.setHeatmapType]);
+  }, [chartContext.visibleGraphs, chartContext.toggleGraph, chartContext.setHeatmapType, 
+      chartContext.updateHeatmapType, chartContext.preferMatrixHeatmap]);
   
   // Fetch default cards from API
   useEffect(() => {
@@ -110,19 +113,23 @@ export function FilterProvider({ children }) {
   
   // Auto-adjust heatmap type based on selected range when kobercovy graph is active
   useEffect(() => {
-    if (chartContextRef.current.visibleGraphs.koberec) {
-      // Use calendar view for ranges of 30 days or more
-      if (
-        rangeKey === "30d" || 
-        rangeKey === "90d" || 
-        rangeKey === "365d" || 
-        (rangeKey === "custom" && 
-          customApplied && 
-          new Date(customEnd) - new Date(customStart) >= 30 * 24 * 60 * 60 * 1000)
-      ) {
-        chartContextRef.current.setHeatmapType("calendar");
+    if (chartContextRef.current?.visibleGraphs?.koberec) {
+      // Access the current value of preferMatrixHeatmap
+      const userPrefersMatrix = chartContextRef.current.preferMatrixHeatmap;
+      
+      // For longer time ranges (30d and above), check user preference
+      if (rangeKey === "30d" || rangeKey === "90d" || rangeKey === "365d" || 
+          (rangeKey === "custom" && customApplied)) {
+        // If user doesn't prefer matrix, use calendar for these ranges
+        if (!userPrefersMatrix) {
+          chartContextRef.current.updateHeatmapType("calendar");
+        } else {
+          // If they prefer matrix, ensure we use matrix
+          chartContextRef.current.updateHeatmapType("matrix");
+        }
       } else {
-        chartContextRef.current.setHeatmapType("matrix");
+        // For shorter time ranges, always use matrix heat map
+        chartContextRef.current.updateHeatmapType("matrix");
       }
     }
   }, [rangeKey, customStart, customEnd, customApplied]);
@@ -237,4 +244,4 @@ export function useFilter() {
     throw new Error('useFilter must be used within a FilterProvider');
   }
   return context;
-} 
+}
