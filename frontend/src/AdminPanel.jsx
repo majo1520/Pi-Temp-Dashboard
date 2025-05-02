@@ -233,11 +233,60 @@ export default function AdminPanel() {
   const handleAddLocation = (locationName) => {
     if (!locationName) return;
     
+    // Add visual feedback that the operation is in progress
+    const addButton = document.querySelector('[data-action="add-location"]');
+    if (addButton) {
+      addButton.disabled = true;
+      addButton.innerHTML = t('adding', 'Adding...');
+    }
+    
     api.addLocation(locationName)
-      .then(() => {
+      .then((response) => {
+        // Show success message
+        const successMessage = document.createElement('div');
+        successMessage.className = 'text-green-600 dark:text-green-400 text-sm mt-2 p-2 rounded bg-green-50 dark:bg-green-900/20';
+        successMessage.innerHTML = `<span class="mr-1">✅</span> ${response.message || t('locationAdded', 'Location has been added.')}`;
+        
+        const messageContainer = document.querySelector('[data-container="add-location-messages"]');
+        if (messageContainer) {
+          messageContainer.innerHTML = '';
+          messageContainer.appendChild(successMessage);
+          
+          // Auto-remove after 5 seconds
+          setTimeout(() => {
+            successMessage.remove();
+          }, 5000);
+        }
+        
+        // Reload data
         loadSensors();
       })
-      .catch(err => console.error("Chyba pri pridávaní lokácie:", err));
+      .catch(err => {
+        console.error("Chyba pri pridávaní lokácie:", err);
+        
+        // Show error message
+        const errorMessage = document.createElement('div');
+        errorMessage.className = 'text-red-600 dark:text-red-400 text-sm mt-2 p-2 rounded bg-red-50 dark:bg-red-900/20';
+        errorMessage.innerHTML = `<span class="mr-1">❌</span> ${err.message || t('locationAddFailed', 'Failed to add location.')}`;
+        
+        const messageContainer = document.querySelector('[data-container="add-location-messages"]');
+        if (messageContainer) {
+          messageContainer.innerHTML = '';
+          messageContainer.appendChild(errorMessage);
+          
+          // Auto-remove after 5 seconds
+          setTimeout(() => {
+            errorMessage.remove();
+          }, 5000);
+        }
+      })
+      .finally(() => {
+        // Reset button state
+        if (addButton) {
+          addButton.disabled = false;
+          addButton.innerHTML = t('add', 'Add');
+        }
+      });
   };
 
   // Logout
@@ -395,17 +444,18 @@ export default function AdminPanel() {
   };
 
   return (
-    <div className="flex h-screen bg-white dark:bg-gray-900">
+    <div className="flex h-screen bg-white dark:bg-gray-900 overflow-hidden">
       <AdminSidebar 
         onReloadSensors={loadSensors} 
         sensors={sensors} 
         onAddLocation={handleAddLocation}
         onHideLocation={handleHideLocations}
         onToggleUsersManagement={toggleUsersManagement}
+        onToggleTelegramSettings={toggleTelegramSettings}
       />
       
-      <div className="flex-1 flex flex-col">
-        <header className="bg-white dark:bg-gray-900 shadow border-b dark:border-gray-800 px-6 py-4 flex justify-between items-center">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <header className="bg-white dark:bg-gray-900 shadow border-b dark:border-gray-800 px-6 py-4 flex justify-between items-center z-10">
           <h1 className="text-xl font-medium text-gray-800 dark:text-white">{t('adminPanelTitle')}</h1>
           <div className="flex space-x-2">
             <HeaderButton
@@ -441,11 +491,11 @@ export default function AdminPanel() {
           </div>
         </header>
         
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-auto p-6 relative">
           {/* Users Management Section (conditionally shown in main view) */}
           {showUsersManagement && (
-            <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-              <div className="flex justify-between items-center px-6 py-4 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800">
+            <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+              <div className="flex justify-between items-center px-6 py-4 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800 sticky top-0 z-10">
                 <h2 className="text-lg font-medium text-blue-800 dark:text-blue-300">{t('userManagement') || 'Manage Users'}</h2>
                 <button 
                   onClick={toggleUsersManagement}
@@ -454,7 +504,7 @@ export default function AdminPanel() {
                   ✕
                 </button>
               </div>
-              <div className="p-6">
+              <div className="p-6 max-h-[80vh] overflow-y-auto">
                 <UsersManagement t={t} />
               </div>
             </div>
@@ -462,8 +512,8 @@ export default function AdminPanel() {
           
           {/* Telegram Settings Section (conditionally shown in main view) */}
           {showTelegramSettings && (
-            <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-              <div className="flex justify-between items-center px-6 py-4 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800">
+            <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+              <div className="flex justify-between items-center px-6 py-4 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800 sticky top-0 z-10">
                 <h2 className="text-lg font-medium text-blue-800 dark:text-blue-300">{t('telegramAlerts') || 'Telegram Alerts'}</h2>
                 <button 
                   onClick={toggleTelegramSettings}
@@ -472,7 +522,7 @@ export default function AdminPanel() {
                   ✕
                 </button>
               </div>
-              <div className="p-6">
+              <div className="p-6 max-h-[80vh] overflow-y-auto">
                 <TelegramSettings t={t} />
               </div>
             </div>
@@ -1154,45 +1204,10 @@ function generateStackedData(uptimeData) {
     };
   }
 
-  // Configure intervals and thresholds based on data size and range span
-  const dataSize = uptimeData.length;
-  // Sort data first to determine time range
-  const sortedForSpan = [...uptimeData].sort((a, b) => {
-    const timeA = a.timestamp || a._time;
-    const timeB = b.timestamp || b._time;
-    if (!timeA || !timeB) return 0;
-    return new Date(timeA.replace(" ", "T")) - new Date(timeB.replace(" ", "T"));
-  });
-  
-  // If we have valid data, calculate the timespan
-  let gapThreshold = 5 * 60 * 1000; // 5 minutes default
-  let sampleInterval = 5 * 60 * 1000; // 5 minutes default
-  const briefOutageThreshold = 2 * 60 * 1000; // 2 minutes (doesn't change)
-  
-  if (dataSize > 0 && sortedForSpan.length >= 2) {
-    const firstTime = sortedForSpan[0].timestamp || sortedForSpan[0]._time;
-    const lastTime = sortedForSpan[sortedForSpan.length-1].timestamp || sortedForSpan[sortedForSpan.length-1]._time;
-    
-    if (firstTime && lastTime) {
-      const start = new Date(firstTime.replace(" ", "T"));
-      const end = new Date(lastTime.replace(" ", "T"));
-      const timespan = end - start;
-      const days = timespan / (1000 * 60 * 60 * 24);
-      
-      // Adjust parameters based on timespan
-      if (days > 300) { // ~365d
-        gapThreshold = 24 * 60 * 60 * 1000; // 1 day
-        sampleInterval = 6 * 60 * 60 * 1000; // 6 hours
-        console.log('365d view detected, using larger gap and sample intervals');
-      } else if (days > 20) { // ~30d
-        gapThreshold = 6 * 60 * 60 * 1000; // 6 hours
-        sampleInterval = 3 * 60 * 60 * 1000; // 3 hours
-      } else if (days > 5) { // ~7d
-        gapThreshold = 2 * 60 * 60 * 1000; // 2 hours
-        sampleInterval = 60 * 60 * 1000; // 1 hour
-      }
-    }
-  }
+  // Fixed thresholds like in the HEATMAP version
+  const gapThreshold = 30 * 60 * 1000; // 30 min for gap display
+  const sampleInterval = 5 * 60 * 1000; // 5 min for downsampling
+  const briefOutageThreshold = 5 * 60 * 1000; // 5 min threshold for brief outages
   
   // Sort data by timestamp to ensure proper sequence
   const sortedData = [...uptimeData].sort((a, b) => {
@@ -1328,129 +1343,76 @@ function generateStackedData(uptimeData) {
 // Helper function to preprocess 365d data
 function preprocessLongRangeData(data) {
   if (!Array.isArray(data) || data.length === 0) return data;
-  
-  console.log('Preprocessing 365d data, received', data.length, 'records');
-  
-  // Validate and sort data by timestamp
-  const validData = data.filter(point => {
-    const timeStr = point.timestamp || point._time;
-    return timeStr && !isNaN(new Date(timeStr.replace(" ", "T")).getTime());
-  });
-  
-  if (validData.length === 0) {
-    console.error('No valid data points found in 365d data');
-    return data; // Return original data if no valid points found
-  }
-  
-  const sortedData = [...validData].sort((a, b) => {
+
+  // Sort data by timestamp
+  const sortedData = [...data].sort((a, b) => {
     const timeA = a.timestamp || a._time;
     const timeB = b.timestamp || b._time;
-    return new Date(timeA.replace(" ", "T")) - new Date(timeB.replace(" ", "T"));
+    return new Date(timeA) - new Date(timeB);
+  });
+
+  // For long ranges like 365d, we need to retain enough points to
+  // accurately represent the data, while avoiding overwhelming the client.
+  // We'll use a week-based bucketing approach to ensure even distribution of points.
+  const processed = [];
+  
+  // Extract the time range
+  const firstTime = new Date(sortedData[0].timestamp || sortedData[0]._time).getTime();
+  const lastTime = new Date(sortedData[sortedData.length - 1].timestamp || sortedData[sortedData.length - 1]._time).getTime();
+  const totalDays = Math.ceil((lastTime - firstTime) / (1000 * 60 * 60 * 24));
+  
+  // Dynamically adjust sampling rate based on data density
+  // Use different sampling rates depending on data density:
+  // - For 0-30 days: Keep 1 point every 4 hours (6 points per day)
+  // - For 31-90 days: Keep 1 point every 6 hours (4 points per day)
+  // - For 91-180 days: Keep 1 point every 8 hours (3 points per day)
+  // - For 181-365 days: Keep 1 point every 12 hours (2 points per day)
+  const pointsPerDay = totalDays <= 30 ? 6 : 
+                       totalDays <= 90 ? 4 : 
+                       totalDays <= 180 ? 3 : 2;
+  
+  // Calculate the step size to achieve our desired points per day
+  const totalPoints = sortedData.length;
+  const samplingRate = Math.max(1, Math.floor(totalPoints / (totalDays * pointsPerDay)));
+  console.log(`365d processing: ${totalPoints} points across ${totalDays} days. Sampling every ${samplingRate} points to get ~${pointsPerDay} points per day.`);
+  
+  // Always include the first point
+  processed.push(sortedData[0]);
+  
+  // Sample points at regular intervals
+  for (let i = samplingRate; i < sortedData.length - 1; i += samplingRate) {
+    processed.push(sortedData[i]);
+  }
+  
+  // Always include status change points (online->offline or offline->online)
+  for (let i = 1; i < sortedData.length - 1; i++) {
+    const current = sortedData[i];
+    const previous = sortedData[i-1];
+    
+    const currentIsOnline = current.online !== false;
+    const previousIsOnline = previous.online !== false;
+    
+    // If status changed and this point isn't already included
+    if (currentIsOnline !== previousIsOnline && !processed.includes(current)) {
+      processed.push(current);
+    }
+  }
+  
+  // Always include the last point
+  const lastPoint = sortedData[sortedData.length - 1];
+  if (!processed.includes(lastPoint)) {
+    processed.push(lastPoint);
+  }
+  
+  // Sort the final array by time
+  processed.sort((a, b) => {
+    const timeA = a.timestamp || a._time;
+    const timeB = b.timestamp || b._time;
+    return new Date(timeA) - new Date(timeB);
   });
   
-  // Determine time range of the data
-  const firstPoint = sortedData[0];
-  const lastPoint = sortedData[sortedData.length - 1];
-  const firstTime = new Date(firstPoint.timestamp || firstPoint._time);
-  const lastTime = new Date(lastPoint.timestamp || lastPoint._time);
-  
-  console.log('Data time range:', firstTime, 'to', lastTime);
-  
-  // Calculate optimal sampling rate based on total timespan
-  // For 365d, we want around 365-730 data points (1-2 per day)
-  const timespan = lastTime - firstTime;
-  const days = timespan / (24 * 60 * 60 * 1000);
-  const targetPoints = Math.min(Math.max(365, days), 730);
-  const samplingRate = Math.max(1, Math.floor(sortedData.length / targetPoints));
-  
-  console.log('Using sampling rate of 1:', samplingRate, 'for 365d data');
-  
-  // Initialize data structures for processing
-  const processedData = [];
-  let currentDay = null;
-  let currentDayPoints = [];
-  
-  // Process data day by day with improved sampling
-  for (const point of sortedData) {
-    try {
-      const timeStr = point.timestamp || point._time;
-      if (!timeStr) continue;
-      
-      const date = new Date(timeStr.replace(" ", "T"));
-      if (isNaN(date.getTime())) continue;
-      
-      const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-      
-      // If we've moved to a new day
-      if (currentDay !== day) {
-        // Process points from previous day if we have any
-        if (currentDayPoints.length > 0) {
-          // Add first and last point of the day, plus status changes
-          if (currentDayPoints.length === 1) {
-            processedData.push(currentDayPoints[0]);
-          } else {
-            // Always include first and last point of the day
-            processedData.push(currentDayPoints[0]);
-            
-            // Add status change points (first checked)
-            let prevStatus = currentDayPoints[0].online !== false;
-            for (let i = 1; i < currentDayPoints.length - 1; i++) {
-              const status = currentDayPoints[i].online !== false;
-              if (status !== prevStatus) {
-                processedData.push(currentDayPoints[i]);
-                prevStatus = status;
-              }
-            }
-            
-            // Add last point of day
-            processedData.push(currentDayPoints[currentDayPoints.length - 1]);
-          }
-        }
-        
-        // Reset for new day
-        currentDay = day;
-        currentDayPoints = [point];
-      } else {
-        // Same day, just add the point to the current day's collection
-        currentDayPoints.push(point);
-      }
-    } catch (err) {
-      console.error('Error processing point in 365d data:', err);
-      // Continue with next point on error
-    }
-  }
-  
-  // Process the last day
-  if (currentDayPoints.length > 0) {
-    if (currentDayPoints.length === 1) {
-      processedData.push(currentDayPoints[0]);
-    } else {
-      // Same logic as in the loop
-      processedData.push(currentDayPoints[0]);
-      
-      let prevStatus = currentDayPoints[0].online !== false;
-      for (let i = 1; i < currentDayPoints.length - 1; i++) {
-        const status = currentDayPoints[i].online !== false;
-        if (status !== prevStatus) {
-          processedData.push(currentDayPoints[i]);
-          prevStatus = status;
-        }
-      }
-      
-      processedData.push(currentDayPoints[currentDayPoints.length - 1]);
-    }
-  }
-  
-  // Always include the very last point from original data
-  if (sortedData.length > 0) {
-    const lastOriginalPoint = sortedData[sortedData.length - 1];
-    if (!processedData.includes(lastOriginalPoint)) {
-      processedData.push(lastOriginalPoint);
-    }
-  }
-  
-  console.log('Preprocessed 365d data from', data.length, 'to', processedData.length, 'points');
-  return processedData;
+  console.log(`365d data reduced from ${data.length} to ${processed.length} points`);
+  return processed;
 }
 
 /** Format time since in a human readable format */

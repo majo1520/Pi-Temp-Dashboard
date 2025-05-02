@@ -145,6 +145,8 @@ export async function getHistoricalData({ locations = [], timeRange = { rangeKey
     if (rangeKey === 'live') return null;
     // For 30d matrix heatmap, always use 1h
     if (rangeKey === '30d') return '1h';
+    // For 365d data, use 12h to get proper aggregation
+    if (rangeKey === '365d') return '12h';
     // For custom ranges, use the custom aggregator function
     if (rangeKey === 'custom' && customStart && customEnd) {
       return getCustomAggregator(customStart, customEnd);
@@ -294,10 +296,10 @@ export async function getSensorStatuses() {
 /**
  * Add a new location/sensor
  * @param {string} locationName - Name of the new location
- * @returns {Promise<string>} - Success message
+ * @returns {Promise<Object>} - Response with success status and message
  */
 export async function addLocation(locationName) {
-  const response = await fetch(`${API_BASE_URL}/add-location`, {
+  const response = await fetch(`${API_BASE_URL}/sensors/add-location`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -305,11 +307,15 @@ export async function addLocation(locationName) {
     body: JSON.stringify({ location: locationName }),
   });
   
+  const data = await (response.headers.get('content-type')?.includes('json') 
+    ? response.json() 
+    : response.text().then(text => ({ success: response.ok, message: text })));
+  
   if (!response.ok) {
-    throw new Error('Failed to add location');
+    throw new Error(data.error || data.message || 'Failed to add location');
   }
   
-  return response.text();
+  return data;
 }
 
 /**
@@ -377,7 +383,7 @@ export const importLineProtocol = (file, location) => {
   formData.append("lpfile", file);
   formData.append("location", location);
 
-  return fetch("/api/import-lp", {
+  return fetch(`${API_BASE_URL}/import/lp`, {
     method: "POST",
     body: formData,
   })
@@ -424,7 +430,7 @@ export const exportData = async ({
       ? "text/plain"
       : "text/csv";
 
-  const response = await fetch(`/api/export?${params}`, {
+  const response = await fetch(`${API_BASE_URL}/export?${params}`, {
     headers: {
       Accept: fileType,
     },
@@ -553,7 +559,7 @@ export async function deleteUserSetting(key) {
  * @returns {Promise<Array>} Array of user objects
  */
 export const getUsers = async () => {
-  const response = await fetch('/api/users', {
+  const response = await fetch(`${API_BASE_URL}/users`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include'
@@ -573,7 +579,7 @@ export const getUsers = async () => {
  * @returns {Promise<Object>} Created user object
  */
 export const createUser = async (userData) => {
-  const response = await fetch('/api/users', {
+  const response = await fetch(`${API_BASE_URL}/users`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -598,7 +604,7 @@ export const resetUserPassword = async (userId, newPassword) => {
   try {
     console.log(`Attempting to reset password for user ID: ${userId}`);
     
-    const response = await fetch(`/api/users/${userId}/reset-password`, {
+    const response = await fetch(`${API_BASE_URL}/users/${userId}/reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -637,7 +643,7 @@ export const resetUserPassword = async (userId, newPassword) => {
  * @returns {Promise<Object>} Updated user data
  */
 export const updateUser = async (userId, userData) => {
-  const response = await fetch(`/api/users/${userId}`, {
+  const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -658,7 +664,7 @@ export const updateUser = async (userId, userData) => {
  * @returns {Promise<Object>} Operation result
  */
 export const deleteUser = async (userId) => {
-  const response = await fetch(`/api/users/${userId}`, {
+  const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include'
@@ -673,11 +679,21 @@ export const deleteUser = async (userId) => {
 };
 
 /**
+ * Get all unique sensor locations for dropdown selection
+ * @returns {Promise<Array<string>>} - Array of location names
+ */
+export async function getUniqueLocations() {
+  const sensors = await getSensors();
+  const locations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
+  return locations;
+}
+
+/**
  * Get Telegram notification settings
  * @returns {Promise<Object>} - Telegram settings
  */
 export async function getTelegramSettings() {
-  const response = await fetch('/api/notifications/telegram/settings', {
+  const response = await fetch(`${API_BASE_URL}/notifications/telegram/settings`, {
     credentials: 'include'
   });
   if (!response.ok) {
@@ -688,79 +704,31 @@ export async function getTelegramSettings() {
 
 /**
  * Update Telegram notification settings
- * @param {Object} settings - Settings object
+ * @param {Object} settings - Telegram settings
  * @param {string} settings.chatId - Telegram chat ID
- * @param {boolean} settings.enabled - Whether notifications are enabled
- * @param {number} settings.notificationFrequency - Notification frequency in minutes
- * @param {string} settings.notificationLanguage - Notification language (en/sk)
- * @param {boolean} settings.sendCharts - Whether to send charts with notifications
+ * @param {boolean} settings.enabled - Global enabled state for notifications
+ * @param {number} settings.notificationFrequency - How often to check and send notifications (in minutes)
+ * @param {string} settings.notificationLanguage - Language for notifications ('en' or 'sk')
+ * @param {boolean} settings.sendCharts - Whether to include charts in notifications
  * @param {Object} settings.thresholds - Threshold settings by location
  * @returns {Promise<Object>} - Updated settings
  */
 export async function updateTelegramSettings(settings) {
-  console.log('updateTelegramSettings - Input settings:', JSON.stringify(settings, null, 2));
+  const response = await fetch(`${API_BASE_URL}/notifications/telegram/settings`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify(settings),
+  });
   
-  try {
-    // Process thresholds to ensure offlineNotificationsEnabled is handled correctly
-    const processedThresholds = {};
-    
-    // Process each location from the thresholds
-    Object.entries(settings.thresholds || {}).forEach(([location, locationThresholds]) => {
-      // Log each location's offline setting before processing
-      console.log(`Location ${location} - offlineNotificationsEnabled before processing:`, 
-                  locationThresholds.offlineNotificationsEnabled);
-      
-      processedThresholds[location] = {
-        temperature: locationThresholds.temperature || { enabled: false, min: 18, max: 28, thresholdType: 'range' },
-        humidity: locationThresholds.humidity || { enabled: false, min: 30, max: 70, thresholdType: 'range' },
-        pressure: locationThresholds.pressure || { enabled: false, min: 980, max: 1030, thresholdType: 'range' },
-        // Convert to boolean and ensure it's explicitly true or false, not undefined
-        offlineNotificationsEnabled: locationThresholds.offlineNotificationsEnabled === true
-      };
-      
-      // Log the processed setting
-      console.log(`Location ${location} - offlineNotificationsEnabled after processing:`, 
-                  processedThresholds[location].offlineNotificationsEnabled);
-    });
-    
-    const requestBody = {
-      chatId: settings.chatId,
-      enabled: settings.enabled,
-      thresholds: processedThresholds,
-      notificationFrequency: settings.notificationFrequency,
-      notificationLanguage: settings.notificationLanguage,
-      sendCharts: settings.sendCharts
-    };
-    
-    console.log('updateTelegramSettings - Processed request body:', JSON.stringify(requestBody, null, 2));
-    
-    // Send all locations in a single request matching the backend's expected format
-    const response = await fetch('/api/notifications/telegram/settings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify(requestBody),
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Error updating Telegram settings:', errorText);
-      throw new Error(`Failed to update Telegram settings: ${response.status} ${response.statusText}`);
-    }
-    
-    const result = await response.json();
-    console.log('Telegram settings update result:', result);
-    
-    // Refresh settings
-    const updatedSettings = await getTelegramSettings();
-    console.log('Refreshed settings after update:', JSON.stringify(updatedSettings, null, 2));
-    return updatedSettings;
-  } catch (error) {
-    console.error('Error in updateTelegramSettings:', error);
-    throw error;
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to update Telegram settings: ${error}`);
   }
+  
+  return response.json();
 }
 
 /**
@@ -769,7 +737,7 @@ export async function updateTelegramSettings(settings) {
  * @returns {Promise<Object>} - Response data
  */
 export async function testTelegramNotification(chatId) {
-  const response = await fetch('/api/notifications/telegram/test', {
+  const response = await fetch(`${API_BASE_URL}/notifications/telegram/test`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -797,7 +765,7 @@ export async function testTelegramNotification(chatId) {
  * @returns {Promise<Object>} - Response data
  */
 export async function sendTelegramNotification(data) {
-  const response = await fetch('/api/notifications/telegram/notify', {
+  const response = await fetch(`${API_BASE_URL}/notifications/telegram/notify`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -812,16 +780,6 @@ export async function sendTelegramNotification(data) {
   }
 
   return await response.json();
-}
-
-/**
- * Get all unique sensor locations for dropdown selection
- * @returns {Promise<Array<string>>} - Array of location names
- */
-export async function getUniqueLocations() {
-  const sensors = await getSensors();
-  const locations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
-  return locations;
 }
 
 /**
@@ -848,22 +806,55 @@ export async function sendTestChart(chatId, type, location, timeRangeMinutes = 6
   }
   
   try {
-    const response = await fetch('/api/telegram/chart', {
+    const response = await fetch(`${API_BASE_URL}/telegram/chart`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        chatId,
         location,
         type,
         timeRangeMinutes,
-        language: getSelectedLanguage()
+        language: 'en' // Default to English
       })
     });
     
-    return await handleApiResponse(response);
+    if (!response.ok) {
+      throw new Error(`Failed to send chart: ${response.status} ${response.statusText}`);
+    }
+    
+    return await response.json();
   } catch (error) {
     console.error('Error sending test chart:', error);
     throw error;
   }
+}
+
+/**
+ * Send notification about sensor being offline or coming back online
+ * @param {Object} data - Notification data with location, status, and lastSeenTime
+ * @returns {Promise<Object>} - API response
+ */
+export async function sendOfflineNotification(data) {
+  // Make sure we have the required data
+  if (!data.location || data.status === undefined) {
+    throw new Error('Missing required parameters (location and status)');
+  }
+  
+  const response = await fetch(`${API_BASE_URL}/notifications/telegram/notify-offline`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    credentials: 'include',
+    body: JSON.stringify(data)
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Failed to send offline notification');
+  }
+  
+  return response.json();
 }

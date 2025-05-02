@@ -458,46 +458,47 @@ Access the dashboard settings to configure thresholds for temperature, humidity,
 
 ### Telegram Notification System
 
-The dashboard includes a configurable Telegram notification system that sends alerts when sensor readings exceed configured thresholds.
+The dashboard supports sending notifications to Telegram when sensor values exceed configured thresholds. This allows you to receive real-time alerts on your mobile device or desktop when temperature, humidity, or pressure readings reach critical levels.
 
-#### Key Features
+#### Setting up Telegram Notifications
 
-- **Per-sensor threshold configuration:** Set individual thresholds for each location and sensor type
-- **Customizable notification frequency:** Configure how often notifications can be sent (prevents alert storms)
-- **Multilingual support:** Receive notifications in English or Slovak language
-- **Chart attachments:** Option to include sensor data charts with notifications
-- **Threshold types:** Choose between 'range' (min/max) and 'max' (ceiling) threshold types
-- **Test notifications:** Send test messages to verify proper configuration
-- **Individual control:** Enable/disable notifications for specific sensor types
+1. **Get a Telegram Bot Token**:
+   - Open Telegram and search for "BotFather"
+   - Start a chat with BotFather and use the `/newbot` command
+   - Follow the instructions to create a bot
+   - Copy the API token provided by BotFather
 
-#### Setting Up Telegram Notifications
+2. **Configure the Environment**:
+   - Add the following variables to your `.env` file:
+   ```
+   TELEGRAM_BOT_TOKEN=your_bot_token_here
+   TELEGRAM_NOTIFICATIONS_ENABLED=true
+   ```
 
-1. **Create a Telegram Bot:**
-   - Message [@BotFather](https://t.me/botfather) on Telegram
-   - Send `/newbot` and follow instructions to create a bot
-   - Copy the bot token provided
+3. **Find Your Chat ID**:
+   - Open Telegram and search for your bot
+   - Start a chat with your bot
+   - Send any message to the bot
+   - In the dashboard, use the "Test Connection" feature in the Notifications settings to establish the connection
 
-2. **Configure the Backend:**
-   - Add your bot token to the `.env` file:
-     ```
-     TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
-     TELEGRAM_NOTIFICATIONS_ENABLED=true
-     ```
+### Using Telegram Notifications
 
-3. **Configure from the Dashboard:**
-   - Go to Admin Panel → Telegram Alerts
-   - Click "Start Chat" with your bot
-   - Forward the message from your bot to the dashboard
-   - Configure thresholds, frequency, and language preferences
-   - Test the connection with the "Send Test Message" button
+1. **Access Notification Settings**:
+   - Log in to the dashboard
+   - Go to the Notifications page from the main menu
 
-4. **Verify Chart Generation:**
-   - Test chart sending with the "Test Chart" button
-   - Charts require proper InfluxDB setup and data history
+2. **Configure Thresholds**:
+   - Enable notifications for specific locations
+   - Set threshold values for temperature, humidity, and pressure
+   - Choose between "range" mode (notify when outside min-max) or "max" mode (notify when exceeding a target value)
+   - Set notification frequency to avoid getting too many alerts
 
-#### Advanced Configuration
+3. **Types of Notifications**:
+   - Standard notifications show the current value and threshold information
+   - Chart notifications include a visual graph of recent readings
+   - You can enable/disable chart attachments in the settings
 
-For additional customization options, see the [Telegram Notifications Documentation](docs/TELEGRAM_NOTIFICATIONS.md).
+Notifications are sent automatically when values exceed thresholds, and the system respects the frequency settings you configure to prevent alert fatigue.
 
 ## Troubleshooting
 

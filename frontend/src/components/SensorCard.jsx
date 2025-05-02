@@ -20,13 +20,12 @@ function SensorCard({
   
   let fallbackMessage = t('dataAvailableOnlyInLive') || "Údaj dostupný iba v LIVE rozsahu";
 
-  // Ak nie je LIVE, namiesto timestampu sa zobrazí fallback správa
-  const lastDateTime =
-    rangeKey === "live" && lastSeen[location]
-      ? new Date(lastSeen[location]).toLocaleString()
-      : rangeKey === "live" && data && data.time
-      ? new Date(data.time).toLocaleString()
-      : fallbackMessage;
+  // Always display the actual last database write time, regardless of range
+  const lastDateTime = lastSeen[location]
+    ? new Date(lastSeen[location]).toLocaleString()
+    : data && data.time
+    ? new Date(data.time).toLocaleString()
+    : t('noDataAvailable') || "Žiadne údaje";
 
   // Výpočet a zobrazenie meraných hodnôt
   const tVal = parseFloat(data?.teplota);

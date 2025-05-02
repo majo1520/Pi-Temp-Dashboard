@@ -566,7 +566,7 @@ function DashboardContent() {
         </Suspense>
 
         <footer className="text-center py-4 text-sm text-gray-500 dark:text-gray-400">
-          Powered by <strong>mikr0N</strong>
+          Powered by <strong>IT europlac</strong>
         </footer>
         
         {/* Error display component */}

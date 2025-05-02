@@ -69,6 +69,23 @@ const ReavizHeatMap = ({
   // State to track date labels
   const [dateLabels, setDateLabels] = useState([]);
   
+  // Helper function to get translated month name
+  const getTranslatedMonth = useCallback((monthIndex) => {
+    const currentLang = i18n.language;
+    
+    // Short month names based on language
+    const monthKeys = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    
+    // Use translations if available
+    if (currentLang === 'sk') {
+      // Slovak translations using the translation system
+      return t(`heatmapDetails.months.${monthKeys[monthIndex]}`, monthKeys[monthIndex]);
+    } else {
+      // English translations using the translation system
+      return t(`heatmap.months.${monthKeys[monthIndex]}`, monthKeys[monthIndex]);
+    }
+  }, [i18n.language, t]);
+  
   // Set moment locale based on current language
   useEffect(() => {
     const currentLang = i18n.language;
@@ -82,6 +99,7 @@ const ReavizHeatMap = ({
       case "7d": return 7;
       case "30d": return 30;
       case "90d": return 90;
+      case "180d": return 180;
       case "365d": return 365;
       case "custom":
         if (customApplied && customStart && customEnd) {
@@ -642,13 +660,14 @@ const ReavizHeatMap = ({
       if (!date.isValid()) return;
       
       const monthKey = date.format('YYYY-MM');
-      const monthName = date.format('MMM');
-      const monthNum = date.format('MM');
+      // Use translation for month name instead of moment's format
+      const monthNum = date.month(); // 0-based month index
+      const monthName = getTranslatedMonth(monthNum);
       
       if (!datesByMonth[monthKey]) {
         datesByMonth[monthKey] = {
           month: monthName,
-          monthNum: monthNum,
+          monthNum: date.format('MM'),
           dates: [],
           firstDay: null,
           lastDay: null
@@ -679,7 +698,7 @@ const ReavizHeatMap = ({
     });
     
     setDateLabels(monthsArray);
-  }, [data, i18n.language]);
+  }, [data, i18n.language, getTranslatedMonth]);
   
   // Render date labels as actual HTML elements instead of canvas
   const renderDateLabels = () => {
@@ -687,30 +706,33 @@ const ReavizHeatMap = ({
     
     // Use canvas width for precise alignment with the heatmap
     const canvasWidth = canvasRef.current ? canvasRef.current.width : 0;
-    const containWidth = containerRef.current.clientWidth;
     const cellWidth = canvasWidth / Math.max(1, data.length);
-    
-    // Get the left position of the canvas relative to the container
-    const canvasLeft = canvasRef.current ? canvasRef.current.offsetLeft : 0;
     
     return (
       <div className="date-labels" style={{ 
         position: 'absolute', 
-        bottom: -25, 
-        left: `${canvasLeft}px`, // Position exactly at the left edge of the canvas
+        bottom: -40,
+        left: 0,
         width: `${canvasWidth}px`, // Match canvas width exactly
-        overflow: 'hidden',
+        overflow: 'visible',
         pointerEvents: 'none',
         display: 'flex',
         flexDirection: 'column'
       }}>
-        {/* Month labels with day markers - more compact layout */}
-        <div style={{ width: '100%', position: 'relative', height: '25px' }}>
+        {/* Month labels - generate evenly distributed month labels */}
+        <div style={{ 
+          width: '100%', 
+          position: 'relative', 
+          height: '25px',
+          display: 'flex',
+          marginTop: '-5px'
+        }}>
           {dateLabels.map((month) => {
-            // Calculate center position for the month label based on canvas coordinates
-            const firstDayIndexRatio = month.firstDay.index / data.length;
-            const lastDayIndexRatio = month.lastDay.index / data.length;
-            const centerX = ((firstDayIndexRatio + lastDayIndexRatio) / 2) * canvasWidth;
+            // Calculate width for each month based on its date range
+            const monthWidth = ((month.lastDay.index - month.firstDay.index + 1) / data.length) * 100;
+            
+            // Position based on first day of the month
+            const leftPosition = (month.firstDay.index / data.length) * 100;
             
             // Month name with colored background
             return (
@@ -718,15 +740,17 @@ const ReavizHeatMap = ({
                 key={`month-${month.month}`}
                 style={{
                   position: 'absolute',
-                  left: `${centerX}px`,
+                  left: `${leftPosition}%`,
+                  width: `${monthWidth}%`,
                   bottom: 0,
-                  transform: 'translateX(-50%)',
                   color: darkMode ? '#e0e0e0' : '#333333',
                   fontSize: '13px',
                   fontWeight: 'bold',
                   padding: '0 6px',
                   textAlign: 'center',
-                  minWidth: '30px'
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center'
                 }}
               >
                 {month.month}
@@ -744,15 +768,15 @@ const ReavizHeatMap = ({
           return visibleDays.map((day) => {
             // Calculate position based on canvas coordinates
             const dayPositionRatio = day.index / data.length;
-            const x = dayPositionRatio * canvasWidth;
+            const x = dayPositionRatio * 100;
             
             return (
               <div 
                 key={`day-${day.index}`}
                 style={{
                   position: 'absolute',
-                  left: `${x}px`,
-                  bottom: '25px',
+                  left: `${x}%`,
+                  bottom: '28px',
                   transform: 'translateX(-50%)',
                   color: darkMode ? '#cccccc' : '#555555',
                   fontSize: '10px',
@@ -779,7 +803,7 @@ const ReavizHeatMap = ({
     return (
       <div className="hour-labels" style={{ 
         position: 'absolute', 
-        left: isFullscreen ? '10px' : '30px', 
+        left: isFullscreen ? '-40px' : '-20px', 
         top: '0', 
         height: '100%', 
         display: 'flex', 
@@ -1223,16 +1247,16 @@ const ReavizHeatMap = ({
       <div style={{ display: 'flex', flexDirection: 'row' }}>
         {/* Y-axis title - removed since we now have direct hour labels */}
         
-        {/* Canvas container - modified to include hour labels outside */}
+        {/* Canvas container - adjusted padding to accommodate lower labels */}
         <div 
           ref={containerRef}
           style={{ 
             position: 'relative', 
             width: 'calc(100% - 30px)',
-            paddingRight: '60px',
-            paddingBottom: '60px',
+            paddingRight: '20px',
+            paddingBottom: '80px',
             height: isFullscreen ? '80vh' : '600px',
-            marginLeft: '70px' // Add left margin to make room for hour labels
+            marginLeft: '60px',
           }}
         >
           <canvas 

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { reloadTranslations } from '../i18n';
 import * as api from '../services/api';
 
 /**
@@ -34,37 +33,12 @@ const TelegramSettings = ({ t }) => {
   const [thresholds, setThresholds] = useState({
     temperature: { min: 18, max: 28, enabled: false, thresholdType: 'range' },
     humidity: { min: 30, max: 70, enabled: false, thresholdType: 'range' },
-    pressure: { min: 980, max: 1030, enabled: false, thresholdType: 'range' }
+    pressure: { min: 980, max: 1030, enabled: false, thresholdType: 'range' },
+    offlineNotificationsEnabled: false
   });
   const [selectedLocation, setSelectedLocation] = useState('');
   const [locations, setLocations] = useState([]);
   const [testStatus, setTestStatus] = useState(null);
-  const [offlineNotificationsEnabled, setOfflineNotificationsEnabled] = useState(false);
-
-  // Debug function to track offline notifications setting
-  const debugOfflineStatus = (stage, value) => {
-    console.group(`Offline Notifications Status [${stage}]`);
-    console.log(`Value: ${value}`);
-    console.log(`Type: ${typeof value}`);
-    console.log(`Boolean evaluation: ${Boolean(value)}`);
-    console.log(`Strict comparison (=== true): ${value === true}`);
-    console.log(`Current State: ${offlineNotificationsEnabled}`);
-    console.groupEnd();
-  };
-
-  // Toggle function with explicit boolean conversion
-  const toggleOfflineNotifications = (e) => {
-    const newValue = e.target.checked === true;
-    console.log(`Toggle Offline Notifications: ${newValue}`);
-    debugOfflineStatus('before toggle', offlineNotificationsEnabled);
-    setOfflineNotificationsEnabled(newValue);
-    debugOfflineStatus('after toggle', newValue);
-  };
-
-  // Reload translations when component mounts to ensure all telegram-related translations are loaded
-  useEffect(() => {
-    reloadTranslations();
-  }, []);
 
   // Load locations and settings on mount
   useEffect(() => {
@@ -85,7 +59,6 @@ const TelegramSettings = ({ t }) => {
       setIsLoading(true);
       try {
         const settings = await api.getTelegramSettings();
-        console.log('Received settings from API:', settings);
         setTelegramSettings(settings || {
           enabled: false,
           chatId: '',
@@ -100,15 +73,6 @@ const TelegramSettings = ({ t }) => {
         setNotificationFrequency(settings?.notificationFrequency || 30);
         setNotificationLanguage(settings?.notificationLanguage || 'en');
         setSendCharts(settings?.sendCharts !== undefined ? settings.sendCharts : true);
-        
-        // If there are thresholds and a selected location, set the offline notification setting
-        if (settings?.thresholds && selectedLocation && settings.thresholds[selectedLocation]) {
-          const offlineValue = settings.thresholds[selectedLocation].offlineNotificationsEnabled === true;
-          debugOfflineStatus('initial load', settings.thresholds[selectedLocation].offlineNotificationsEnabled);
-          console.log(`Setting initial offlineNotificationsEnabled to: ${offlineValue}`);
-          setOfflineNotificationsEnabled(offlineValue);
-        }
-        
         setIsLoading(false);
       } catch (err) {
         console.error('Error fetching Telegram settings:', err);
@@ -137,12 +101,12 @@ const TelegramSettings = ({ t }) => {
       const locationThresholds = telegramSettings.thresholds?.[selectedLocation] || {
         temperature: { min: 18, max: 28, enabled: false, thresholdType: 'range' },
         humidity: { min: 30, max: 70, enabled: false, thresholdType: 'range' },
-        pressure: { min: 980, max: 1030, enabled: false, thresholdType: 'range' }
+        pressure: { min: 980, max: 1030, enabled: false, thresholdType: 'range' },
+        offlineNotificationsEnabled: false
       };
       
-      console.log(`Location changed to ${selectedLocation}`);
-      console.log(`Location thresholds:`, locationThresholds);
-      debugOfflineStatus('location change - raw value', locationThresholds.offlineNotificationsEnabled);
+      // For debugging
+      console.log('Location thresholds from API:', locationThresholds);
       
       // Ensure no null values are present
       const sanitizedThresholds = {
@@ -163,28 +127,18 @@ const TelegramSettings = ({ t }) => {
           max: locationThresholds.pressure?.max ?? 1030, 
           enabled: locationThresholds.pressure?.enabled ?? false, 
           thresholdType: locationThresholds.pressure?.thresholdType ?? 'range' 
-        }
+        },
+        offlineNotificationsEnabled: locationThresholds.offlineNotificationsEnabled ?? false
       };
       
       setThresholds(sanitizedThresholds);
       setNotificationLanguage(telegramSettings.notificationLanguage || 'en');
-      
-      // Set the offline notification setting whenever the location changes
-      // Use strict boolean comparison to ensure true/false values only
-      const offlineEnabled = locationThresholds.offlineNotificationsEnabled === true;
-      debugOfflineStatus('location change - after conversion', offlineEnabled);
-      setOfflineNotificationsEnabled(offlineEnabled);
     }
   }, [selectedLocation, telegramSettings]);
 
   const handleSaveSettings = async () => {
     setIsSaving(true);
     try {
-      debugOfflineStatus('before save', offlineNotificationsEnabled);
-      
-      // Create a strictly boolean value for the API call
-      const offlineValue = offlineNotificationsEnabled === true;
-      
       const updatedSettings = await api.updateTelegramSettings({
         chatId: chatId || '',
         enabled: telegramSettings?.enabled ?? false,
@@ -193,38 +147,21 @@ const TelegramSettings = ({ t }) => {
         sendCharts: sendCharts,
         thresholds: {
           ...telegramSettings?.thresholds,
-          [selectedLocation]: {
-            ...thresholds,
-            // Ensure we're using true boolean value
-            offlineNotificationsEnabled: offlineValue
-          }
+          [selectedLocation]: thresholds
         }
       });
       
-      console.log(`Received updated settings from API:`, updatedSettings);
-      
-      // Ensure the local state is updated with the modified settings
-      setTelegramSettings(prevSettings => {
-        if (!updatedSettings) return prevSettings;
-        
-        // Make sure to preserve the current offlineNotificationsEnabled value in the state
-        const newSettings = { ...updatedSettings };
-        if (newSettings.thresholds && newSettings.thresholds[selectedLocation]) {
-          // Force the value to be the one we know is correct
-          newSettings.thresholds[selectedLocation].offlineNotificationsEnabled = offlineValue;
-          debugOfflineStatus('after save - forcing correct value', offlineValue);
-        }
-        
-        return newSettings;
+      setTelegramSettings(updatedSettings || {
+        enabled: false,
+        chatId: '',
+        connected: false,
+        notificationFrequency: 30,
+        notificationLanguage: 'en',
+        sendCharts: true,
+        thresholds: {}
       });
-      
-      // Double-check the state is set correctly
-      setTimeout(() => {
-        debugOfflineStatus('after save - delayed check', offlineNotificationsEnabled);
-      }, 100);
-      
       setIsSaving(false);
-      setTestStatus({ success: true, message: t('telegram.settingsSaved') });
+      setTestStatus({ success: true, message: t('settingsSaved') || 'Settings saved successfully' });
       setTimeout(() => setTestStatus(null), 3000);
     } catch (err) {
       setError(`Failed to save settings: ${err.message}`);
@@ -234,19 +171,19 @@ const TelegramSettings = ({ t }) => {
   };
 
   const handleTestNotification = async () => {
-    setTestStatus({ loading: true, message: t('telegram.sendingTestNotification') });
+    setTestStatus({ loading: true, message: t('sendingTestNotification') || 'Sending test notification...' });
     try {
       const response = await api.testTelegramNotification(chatId || '');
       
       if (response.success) {
-        setTestStatus({ success: true, message: t('telegram.testNotificationSent') });
+        setTestStatus({ success: true, message: t('testNotificationSent') || 'Test notification sent successfully!' });
         setBotConnected(true);
       } else {
-        setTestStatus({ error: true, message: response.message || t('telegram.failedToSendTest') });
+        setTestStatus({ error: true, message: response.message || t('failedToSendTest') || 'Failed to send test notification' });
       }
       setTimeout(() => setTestStatus(null), 3000);
     } catch (err) {
-      setTestStatus({ error: true, message: err.message || t('telegram.failedToSendTest') });
+      setTestStatus({ error: true, message: err.message || t('failedToSendTest') || 'Failed to send test notification' });
       setTimeout(() => setTestStatus(null), 3000);
       console.error(err);
     }
@@ -272,49 +209,12 @@ const TelegramSettings = ({ t }) => {
     }));
   };
 
-  const loadSettings = async () => {
-    setIsLoading(true);
-    try {
-      // Load sensor locations first
-      const locationsData = await api.getSensorLocations();
-      setLocations(locationsData || []);
-      
-      // Then load Telegram settings
-      const settings = await api.getTelegramSettings();
-      
-      setTelegramSettings(settings);
-      setChatId(settings.chatId || '');
-      setBotConnected(settings.connected || false);
-      setNotificationFrequency(settings.notificationFrequency || 30);
-      setNotificationLanguage(settings.notificationLanguage || 'en');
-      setSendCharts(settings.sendCharts !== false);
-      
-      // Set location thresholds if available
-      if (settings.thresholds && Object.keys(settings.thresholds).length > 0) {
-        if (locationsData && locationsData.length > 0) {
-          const firstLocation = locationsData[0];
-          setSelectedLocation(firstLocation);
-          const locationSettings = settings.thresholds[firstLocation] || {};
-          
-          // Set thresholds for the selected location
-          setThresholds({
-            temperature: locationSettings.temperature || { min: 18, max: 28, enabled: false, thresholdType: 'range' },
-            humidity: locationSettings.humidity || { min: 30, max: 70, enabled: false, thresholdType: 'range' },
-            pressure: locationSettings.pressure || { min: 980, max: 1030, enabled: false, thresholdType: 'range' }
-          });
-          
-          // Set offline notification setting
-          setOfflineNotificationsEnabled(locationSettings.offlineNotificationsEnabled || false);
-        }
-      }
-      
-      setError(null);
-    } catch (err) {
-      console.error('Failed to load settings:', err);
-      setError(`Failed to load settings: ${err.message}`);
-    } finally {
-      setIsLoading(false);
-    }
+  // Add a function to handle offline notification toggle
+  const handleOfflineNotificationsToggle = (enabled) => {
+    setThresholds(prev => ({
+      ...prev,
+      offlineNotificationsEnabled: enabled
+    }));
   };
 
   if (isLoading) {
@@ -328,7 +228,7 @@ const TelegramSettings = ({ t }) => {
   return (
     <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
       <h2 className="text-xl font-semibold mb-6 text-gray-800 dark:text-white">
-        {t('telegram.alertSettings')}
+        {t ? t('telegramAlertSettings') : 'Telegram Alert Settings'}
       </h2>
       
       {error && (
@@ -354,11 +254,11 @@ const TelegramSettings = ({ t }) => {
           <div>
             <h3 className={`font-medium ${telegramSettings?.enabled ? 'text-green-800 dark:text-green-300' : 'text-red-800 dark:text-red-300'}`}>
               {telegramSettings?.enabled 
-                ? t('telegram.notificationsEnabled')
-                : t('telegram.notificationsDisabled')}
+                ? (t ? t('notificationsEnabled') : 'Notifications Enabled') 
+                : (t ? t('notificationsDisabled') : 'Notifications Disabled')}
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              {t('telegram.notificationsToggleDescription')}
+              {t ? t('notificationsToggleDescription') : 'Master switch for all Telegram notifications'}
             </p>
           </div>
           <label className="inline-flex items-center cursor-pointer">
@@ -380,13 +280,13 @@ const TelegramSettings = ({ t }) => {
         <div>
           <div className="mb-6">
             <h3 className="text-lg font-medium mb-4 text-gray-700 dark:text-gray-300">
-              {t('telegram.botConfiguration')}
+              {t ? t('botConfiguration') : 'Bot Configuration'}
             </h3>
             
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {t('telegram.telegramChatId')}
+                  {t ? t('telegramChatId') : 'Telegram Chat ID'}
                 </label>
                 <div className="flex">
                   <input
@@ -401,40 +301,40 @@ const TelegramSettings = ({ t }) => {
                     className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-r-md flex items-center"
                     disabled={isSaving}
                   >
-                    {t('telegram.test')}
+                    {t ? t('test') : 'Test'}
                   </button>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {t('telegram.chatIdInstructions')}
+                  {t ? t('chatIdInstructions') : 'Start a chat with your bot and send /start to get your Chat ID'}
                 </p>
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {t('telegram.notificationFrequency')}
+                  {t ? t('notificationFrequency') : 'Notification Frequency'}
                 </label>
                 <select
                   value={notificationFrequency}
                   onChange={(e) => setNotificationFrequency(parseInt(e.target.value))}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 >
-                  <option value="1">{t('telegram.every1Minute')}</option>
-                  <option value="5">{t('telegram.every5Minutes')}</option>
-                  <option value="15">{t('telegram.every15Minutes')}</option>
-                  <option value="30">{t('telegram.every30Minutes')}</option>
-                  <option value="60">{t('telegram.everyHour')}</option>
-                  <option value="120">{t('telegram.every2Hours')}</option>
-                  <option value="360">{t('telegram.every6Hours')}</option>
-                  <option value="720">{t('telegram.every12Hours')}</option>
+                  <option value="1">{t ? t('every1Minute') : 'Every minute'}</option>
+                  <option value="5">{t ? t('every5Minutes') : 'Every 5 minutes'}</option>
+                  <option value="15">{t ? t('every15Minutes') : 'Every 15 minutes'}</option>
+                  <option value="30">{t ? t('every30Minutes') : 'Every 30 minutes'}</option>
+                  <option value="60">{t ? t('everyHour') : 'Every hour'}</option>
+                  <option value="120">{t ? t('every2Hours') : 'Every 2 hours'}</option>
+                  <option value="360">{t ? t('every6Hours') : 'Every 6 hours'}</option>
+                  <option value="720">{t ? t('every12Hours') : 'Every 12 hours'}</option>
                 </select>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {t('telegram.notificationFrequencyDescription')}
+                  {t ? t('notificationFrequencyDescription') : 'How often to check and send notifications'}
                 </p>
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {t('telegram.notificationLanguage')}
+                  {t ? t('notificationLanguage') : 'Notification Language'}
                 </label>
                 <select
                   value={notificationLanguage}
@@ -445,13 +345,13 @@ const TelegramSettings = ({ t }) => {
                   <option value="sk">Slovenčina</option>
                 </select>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {t('telegram.notificationLanguageDescription')}
+                  {t ? t('notificationLanguageDescription') : 'Language for notification messages'}
                 </p>
               </div>
 
               <div className="mt-4">
                 <label className="flex items-center justify-between text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  <span>{t('telegram.sendCharts')}</span>
+                  <span>{t ? t('sendCharts') : 'Include Charts in Notifications'}</span>
                   <label className="inline-flex items-center cursor-pointer ml-2">
                     <input
                       type="checkbox"
@@ -463,7 +363,7 @@ const TelegramSettings = ({ t }) => {
                   </label>
                 </label>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {t('telegram.sendChartsDescription')}
+                  {t ? t('sendChartsDescription') : 'When enabled, charts with historical data will be included with notifications'}
                 </p>
               </div>
               
@@ -471,8 +371,8 @@ const TelegramSettings = ({ t }) => {
                 <div className={`w-3 h-3 rounded-full mr-2 ${botConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
                 <span className="text-sm text-gray-700 dark:text-gray-300">
                   {botConnected ? 
-                    t('telegram.botConnected') : 
-                    t('telegram.botDisconnected')}
+                    (t ? t('botConnected') : 'Bot connected') : 
+                    (t ? t('botDisconnected') : 'Bot not connected')}
                 </span>
               </div>
             </div>
@@ -487,10 +387,10 @@ const TelegramSettings = ({ t }) => {
               {isSaving ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  {t('telegram.saving')}
+                  {t ? t('saving') : 'Saving...'}
                 </>
               ) : (
-                t('telegram.saveSettings')
+                t ? t('saveSettings') : 'Save Settings'
               )}
             </button>
           </div>
@@ -499,12 +399,12 @@ const TelegramSettings = ({ t }) => {
         <div>
           <div className="mb-6">
             <h3 className="text-lg font-medium mb-4 text-gray-700 dark:text-gray-300">
-              {t('telegram.thresholdSettings')}
+              {t ? t('thresholdSettings') : 'Threshold Settings'}
             </h3>
             
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                {t('telegram.selectLocation')}
+                {t ? t('selectLocation') : 'Select Location'}
               </label>
               <select
                 value={selectedLocation}
@@ -517,26 +417,26 @@ const TelegramSettings = ({ t }) => {
               </select>
             </div>
             
-            {/* Offline Notification Toggle */}
-            <div className="mb-4 bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-              <div className="flex items-start">
-                <div className="flex items-center h-5">
-                  <input
-                    id="offline-notifications"
-                    type="checkbox"
-                    checked={offlineNotificationsEnabled === true}
-                    onChange={toggleOfflineNotifications}
-                    className="w-4 h-4 border border-gray-300 rounded dark:border-gray-600 bg-gray-50 focus:ring-3 focus:ring-primary-300 dark:bg-gray-700 dark:focus:ring-primary-600"
-                  />
-                </div>
-                <div className="ml-3 text-sm">
-                  <label htmlFor="offline-notifications" className="font-medium text-gray-900 dark:text-white">
-                    {t('telegram.offlineNotifications') || 'Offline Notifications'}
-                  </label>
-                  <p className="text-gray-500 dark:text-gray-400">
-                    {t('telegram.offlineNotificationsDescription') || 'Get notified when a sensor goes offline'}
+            {/* Offline notifications - moved here after location selection */}
+            <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-md">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h4 className="font-medium text-gray-800 dark:text-gray-200">
+                    {t ? t('offlineNotifications') : 'Offline Notifications'}
+                  </h4>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {t ? t('offlineNotificationsDescription') : 'Send notifications when sensors go offline or come back online'}
                   </p>
                 </div>
+                <label className="inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={thresholds.offlineNotificationsEnabled || false}
+                    onChange={(e) => handleOfflineNotificationsToggle(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-500 peer-checked:bg-blue-600"></div>
+                </label>
               </div>
             </div>
             
@@ -545,7 +445,7 @@ const TelegramSettings = ({ t }) => {
               <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-md">
                 <div className="flex justify-between items-center mb-3">
                   <h4 className="font-medium text-gray-800 dark:text-gray-200">
-                    {t('telegram.temperature')} (°C)
+                    {t ? t('temperature') : 'Temperature'} (°C)
                   </h4>
                   <label className="inline-flex items-center cursor-pointer">
                     <input
@@ -562,7 +462,7 @@ const TelegramSettings = ({ t }) => {
                 {thresholds.temperature.enabled && (
                   <div className="mb-3">
                     <div className="flex items-center space-x-4">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">{t('telegram.thresholdType')}:</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{t ? t('thresholdType') : 'Threshold Type'}:</span>
                       <div className="flex space-x-4">
                         <label className="inline-flex items-center">
                           <input
@@ -573,7 +473,7 @@ const TelegramSettings = ({ t }) => {
                             className="form-radio h-4 w-4 text-blue-600"
                           />
                           <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                            {t('telegram.rangeThreshold')}
+                            {t ? t('rangeThreshold') : 'Value outside range'}
                           </span>
                         </label>
                         <label className="inline-flex items-center">
@@ -585,7 +485,7 @@ const TelegramSettings = ({ t }) => {
                             className="form-radio h-4 w-4 text-blue-600"
                           />
                           <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                            {t('telegram.maxOnlyThreshold')}
+                            {t ? t('maxOnlyThreshold') : 'Value exceeds threshold'}
                           </span>
                         </label>
                       </div>
@@ -597,7 +497,7 @@ const TelegramSettings = ({ t }) => {
                   {thresholds.temperature.thresholdType === 'range' && (
                     <div>
                       <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                        {t('telegram.minimum')}
+                        {t ? t('minimum') : 'Minimum'}
                       </label>
                       <input
                         type="number"
@@ -610,7 +510,7 @@ const TelegramSettings = ({ t }) => {
                   )}
                   <div className={thresholds.temperature.thresholdType === 'max' ? 'col-span-2' : ''}>
                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      {t('telegram.maximum')}
+                      {t ? t('maximum') : 'Maximum'}
                     </label>
                     <input
                       type="number"
@@ -627,7 +527,7 @@ const TelegramSettings = ({ t }) => {
               <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-md">
                 <div className="flex justify-between items-center mb-3">
                   <h4 className="font-medium text-gray-800 dark:text-gray-200">
-                    {t('telegram.humidity')} (%)
+                    {t ? t('humidity') : 'Humidity'} (%)
                   </h4>
                   <label className="inline-flex items-center cursor-pointer">
                     <input
@@ -644,7 +544,7 @@ const TelegramSettings = ({ t }) => {
                 {thresholds.humidity.enabled && (
                   <div className="mb-3">
                     <div className="flex items-center space-x-4">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">{t('telegram.thresholdType')}:</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{t ? t('thresholdType') : 'Threshold Type'}:</span>
                       <div className="flex space-x-4">
                         <label className="inline-flex items-center">
                           <input
@@ -655,7 +555,7 @@ const TelegramSettings = ({ t }) => {
                             className="form-radio h-4 w-4 text-blue-600"
                           />
                           <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                            {t('telegram.rangeThreshold')}
+                            {t ? t('rangeThreshold') : 'Value outside range'}
                           </span>
                         </label>
                         <label className="inline-flex items-center">
@@ -667,7 +567,7 @@ const TelegramSettings = ({ t }) => {
                             className="form-radio h-4 w-4 text-blue-600"
                           />
                           <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                            {t('telegram.maxOnlyThreshold')}
+                            {t ? t('maxOnlyThreshold') : 'Value exceeds threshold'}
                           </span>
                         </label>
                       </div>
@@ -679,7 +579,7 @@ const TelegramSettings = ({ t }) => {
                   {thresholds.humidity.thresholdType === 'range' && (
                     <div>
                       <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                        {t('telegram.minimum')}
+                        {t ? t('minimum') : 'Minimum'}
                       </label>
                       <input
                         type="number"
@@ -692,7 +592,7 @@ const TelegramSettings = ({ t }) => {
                   )}
                   <div className={thresholds.humidity.thresholdType === 'max' ? 'col-span-2' : ''}>
                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      {t('telegram.maximum')}
+                      {t ? t('maximum') : 'Maximum'}
                     </label>
                     <input
                       type="number"
@@ -709,7 +609,7 @@ const TelegramSettings = ({ t }) => {
               <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-md">
                 <div className="flex justify-between items-center mb-3">
                   <h4 className="font-medium text-gray-800 dark:text-gray-200">
-                    {t('telegram.pressure')} (hPa)
+                    {t ? t('pressure') : 'Pressure'} (hPa)
                   </h4>
                   <label className="inline-flex items-center cursor-pointer">
                     <input
@@ -726,7 +626,7 @@ const TelegramSettings = ({ t }) => {
                 {thresholds.pressure.enabled && (
                   <div className="mb-3">
                     <div className="flex items-center space-x-4">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">{t('telegram.thresholdType')}:</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{t ? t('thresholdType') : 'Threshold Type'}:</span>
                       <div className="flex space-x-4">
                         <label className="inline-flex items-center">
                           <input
@@ -737,7 +637,7 @@ const TelegramSettings = ({ t }) => {
                             className="form-radio h-4 w-4 text-blue-600"
                           />
                           <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                            {t('telegram.rangeThreshold')}
+                            {t ? t('rangeThreshold') : 'Value outside range'}
                           </span>
                         </label>
                         <label className="inline-flex items-center">
@@ -749,7 +649,7 @@ const TelegramSettings = ({ t }) => {
                             className="form-radio h-4 w-4 text-blue-600"
                           />
                           <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                            {t('telegram.maxOnlyThreshold')}
+                            {t ? t('maxOnlyThreshold') : 'Value exceeds threshold'}
                           </span>
                         </label>
                       </div>
@@ -761,7 +661,7 @@ const TelegramSettings = ({ t }) => {
                   {thresholds.pressure.thresholdType === 'range' && (
                     <div>
                       <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                        {t('telegram.minimum')}
+                        {t ? t('minimum') : 'Minimum'}
                       </label>
                       <input
                         type="number"
@@ -774,7 +674,7 @@ const TelegramSettings = ({ t }) => {
                   )}
                   <div className={thresholds.pressure.thresholdType === 'max' ? 'col-span-2' : ''}>
                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      {t('telegram.maximum')}
+                      {t ? t('maximum') : 'Maximum'}
                     </label>
                     <input
                       type="number"
@@ -793,7 +693,7 @@ const TelegramSettings = ({ t }) => {
       
       <div className="mt-6 text-sm text-gray-500 dark:text-gray-400 border-t pt-4 dark:border-gray-700">
         <p>
-          {t('telegram.telegramNotificationsInfo')}
+          {t ? t('telegramNotificationsInfo') : 'Notifications will be sent when values go outside the specified ranges. Set up a Telegram bot for notifications.'}
         </p>
         <p className="mt-2">
           <a 
@@ -802,7 +702,7 @@ const TelegramSettings = ({ t }) => {
             rel="noopener noreferrer"
             className="text-blue-600 hover:underline dark:text-blue-400"
           >
-            {t('telegram.howToCreateBot')}
+            {t ? t('howToCreateBot') : 'How to create a Telegram bot'}
           </a>
         </p>
       </div>

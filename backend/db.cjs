@@ -982,422 +982,225 @@ const userSettings = {
   }
 };
 
+// Function to better ensure boolean fields are properly stored as INTEGER in SQLite
+function ensureSqliteBoolean(value) {
+  // If it's already a number, ensure it's 0 or 1
+  if (typeof value === 'number') {
+    return value === 0 ? 0 : 1;
+  }
+  // If it's a boolean
+  else if (typeof value === 'boolean') {
+    return value ? 1 : 0;
+  }
+  // If it's a string (e.g., "0", "1", "true", "false")
+  else if (typeof value === 'string') {
+    const lowered = value.toLowerCase();
+    return (lowered === '0' || lowered === 'false' || lowered === '') ? 0 : 1;
+  }
+  // For null/undefined
+  else if (value === null || value === undefined) {
+    return 0;
+  }
+  // For any other type, use truthy/falsy check
+  return value ? 1 : 0;
+}
+
 // Notification settings management functions
 const notificationSettings = {
   // Get all notification settings for a user
   async getUserSettings(userId) {
-    logger.log(`Getting notification settings for user ID: ${userId}`);
     return new Promise((resolve, reject) => {
-      // Get all columns in the notification_settings table
-      db.all("PRAGMA table_info(notification_settings)", [], (err, columns) => {
-        if (err) {
-          logger.error(`Failed to get columns info: ${err.message}`);
-          return reject(err);
+      db.all(
+        `SELECT * FROM notification_settings 
+         WHERE user_id = ?`,
+        [userId],
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
         }
-
-        // Build a dynamic query that only includes existing columns
-        const columnNames = columns.map(col => col.name).filter(name => 
-          name !== 'id' && name !== 'user_id' && name !== 'created_at' && name !== 'updated_at'
-        );
-        
-        // Always include these base columns
-        const baseColumns = ['id', 'user_id', 'chat_id', 'enabled', 'location'];
-        
-        // Combine all columns for the query
-        const allColumns = [...baseColumns, ...columnNames.filter(col => !baseColumns.includes(col))];
-        
-        // Create the SELECT query with only existing columns
-        const query = `SELECT ${allColumns.join(', ')} FROM notification_settings WHERE user_id = ?`;
-        logger.log(`SQL Query: ${query} with userId: ${userId}`);
-        
-        db.all(query, [userId], (err, rows) => {
-          if (err) {
-            logger.error(`Database error: ${err.message}`);
-            reject(err);
-          } else {
-            // Add default values for missing columns
-            const processedRows = rows.map(row => {
-              // Ensure notification_language has a default value
-              if (row.notification_language === undefined || row.notification_language === null) {
-                row.notification_language = 'en';
-              }
-              return row;
-            });
-            logger.log(`Retrieved ${processedRows.length} notification settings for user ID: ${userId}`);
-            if (processedRows.length > 0) {
-              logger.log(`First row: chat_id=${processedRows[0].chat_id}, enabled=${processedRows[0].enabled}`);
-            }
-            resolve(processedRows);
-          }
-        });
-      });
+      );
     });
   },
-  
+
   // Get all notification settings for all users
   async getAllSettings() {
-    logger.log(`Getting all notification settings for all users`);
     return new Promise((resolve, reject) => {
-      // Get all columns in the notification_settings table
-      db.all("PRAGMA table_info(notification_settings)", [], (err, columns) => {
-        if (err) {
-          logger.error(`Failed to get columns info: ${err.message}`);
-          return reject(err);
+      db.all(
+        `SELECT * FROM notification_settings`,
+        [],
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
         }
-
-        // Build a dynamic query that only includes existing columns
-        const columnNames = columns.map(col => col.name).filter(name => 
-          name !== 'id' && name !== 'created_at' && name !== 'updated_at'
-        );
-        
-        // Always include these base columns
-        const baseColumns = ['id', 'user_id', 'chat_id', 'enabled', 'location'];
-        
-        // Combine all columns for the query
-        const allColumns = [...baseColumns, ...columnNames.filter(col => !baseColumns.includes(col))];
-        
-        // Create the SELECT query with only existing columns
-        const query = `SELECT ${allColumns.join(', ')} FROM notification_settings`;
-        logger.log(`SQL Query: ${query} - getting all settings`);
-        
-        db.all(query, [], (err, rows) => {
-          if (err) {
-            logger.error(`Database error: ${err.message}`);
-            reject(err);
-          } else {
-            // Add default values for missing columns
-            const processedRows = rows.map(row => {
-              // Ensure notification_language has a default value
-              if (row.notification_language === undefined || row.notification_language === null) {
-                row.notification_language = 'en';
-              }
-              return row;
-            });
-            logger.log(`Retrieved ${processedRows.length} notification settings in total`);
-            resolve(processedRows);
-          }
-        });
-      });
+      );
     });
   },
-  
+
+  // Create or update notification settings for a user and location
+  async updateSettings(userId, location, settings) {
+    return new Promise((resolve, reject) => {
+      // First check if settings exist for this user and location
+      db.get(
+        'SELECT id FROM notification_settings WHERE user_id = ? AND location = ?',
+        [userId, location],
+        (err, row) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          const now = new Date().toISOString();
+          
+          if (row) {
+            // Update existing settings
+            const updateQuery = `
+              UPDATE notification_settings SET
+                chat_id = ?,
+                enabled = ?,
+                temperature_enabled = ?,
+                temperature_min = ?,
+                temperature_max = ?,
+                temperature_threshold_type = ?,
+                humidity_enabled = ?,
+                humidity_min = ?,
+                humidity_max = ?,
+                humidity_threshold_type = ?,
+                pressure_enabled = ?,
+                pressure_min = ?,
+                pressure_max = ?,
+                pressure_threshold_type = ?,
+                offline_notification_enabled = ?,
+                notification_frequency_minutes = ?,
+                notification_language = ?,
+                send_charts = ?,
+                updated_at = ?
+              WHERE id = ?
+            `;
+            
+            db.run(updateQuery, [
+              settings.chat_id,
+              settings.enabled ? 1 : 0,
+              settings.temperature_enabled ? 1 : 0,
+              settings.temperature_min,
+              settings.temperature_max,
+              settings.temperature_threshold_type || 'range',
+              settings.humidity_enabled ? 1 : 0,
+              settings.humidity_min,
+              settings.humidity_max,
+              settings.humidity_threshold_type || 'range',
+              settings.pressure_enabled ? 1 : 0,
+              settings.pressure_min,
+              settings.pressure_max,
+              settings.pressure_threshold_type || 'range',
+              settings.offline_notification_enabled === 1 ? 1 : 0, // Ensure it's 0 or 1
+              settings.notification_frequency_minutes || 30,
+              settings.notification_language || 'en',
+              settings.send_charts ? 1 : 0,
+              now,
+              row.id
+            ], (err) => {
+              if (err) reject(err);
+              else resolve(true);
+            });
+          } else {
+            // Insert new settings
+            const insertQuery = `
+              INSERT INTO notification_settings (
+                user_id,
+                location,
+                chat_id,
+                enabled,
+                temperature_enabled,
+                temperature_min,
+                temperature_max,
+                temperature_threshold_type,
+                humidity_enabled,
+                humidity_min,
+                humidity_max,
+                humidity_threshold_type,
+                pressure_enabled,
+                pressure_min,
+                pressure_max,
+                pressure_threshold_type,
+                offline_notification_enabled,
+                notification_frequency_minutes,
+                notification_language,
+                send_charts,
+                created_at,
+                updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `;
+            
+            db.run(insertQuery, [
+              userId,
+              location,
+              settings.chat_id,
+              settings.enabled ? 1 : 0,
+              settings.temperature_enabled ? 1 : 0,
+              settings.temperature_min,
+              settings.temperature_max,
+              settings.temperature_threshold_type || 'range',
+              settings.humidity_enabled ? 1 : 0,
+              settings.humidity_min,
+              settings.humidity_max,
+              settings.humidity_threshold_type || 'range',
+              settings.pressure_enabled ? 1 : 0,
+              settings.pressure_min,
+              settings.pressure_max,
+              settings.pressure_threshold_type || 'range',
+              settings.offline_notification_enabled === 1 ? 1 : 0, // Ensure it's 0 or 1
+              settings.notification_frequency_minutes || 30,
+              settings.notification_language || 'en',
+              settings.send_charts ? 1 : 0,
+              now,
+              now
+            ], (err) => {
+              if (err) reject(err);
+              else resolve(true);
+            });
+          }
+        }
+      );
+    });
+  },
+
+  // Update just the chat ID for all locations for a user
+  async updateChatId(userId, chatId) {
+    return new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE notification_settings SET chat_id = ?, updated_at = ? WHERE user_id = ?',
+        [chatId, new Date().toISOString(), userId],
+        (err) => {
+          if (err) reject(err);
+          else resolve(true);
+        }
+      );
+    });
+  },
+
+  // Update just the notification language for all locations for a user
+  async updateLanguage(userId, language) {
+    return new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE notification_settings SET notification_language = ?, updated_at = ? WHERE user_id = ?',
+        [language, new Date().toISOString(), userId],
+        (err) => {
+          if (err) reject(err);
+          else resolve(true);
+        }
+      );
+    });
+  },
+
   // Get notification settings for a specific user and location
   async getLocationSettings(userId, location) {
     return new Promise((resolve, reject) => {
-      // Get all columns in the notification_settings table
-      db.all("PRAGMA table_info(notification_settings)", [], (err, columns) => {
-        if (err) {
-          return reject(err);
-        }
-
-        // Build a dynamic query that only includes existing columns
-        const columnNames = columns.map(col => col.name).filter(name => 
-          name !== 'id' && name !== 'user_id' && name !== 'created_at' && name !== 'updated_at'
-        );
-        
-        // Always include these base columns
-        const baseColumns = ['id', 'user_id', 'chat_id', 'enabled', 'location'];
-        
-        // Combine all columns for the query
-        const allColumns = [...baseColumns, ...columnNames.filter(col => !baseColumns.includes(col))];
-        
-        // Create the SELECT query with only existing columns
-        const query = `SELECT ${allColumns.join(', ')} FROM notification_settings WHERE user_id = ? AND location = ?`;
-        
-        db.get(query, [userId, location], (err, row) => {
-          if (err) {
-            reject(err);
-          } else {
-            if (row) {
-              // Ensure notification_language has a default value
-              if (row.notification_language === undefined || row.notification_language === null) {
-                row.notification_language = 'en';
-              }
-            }
-            resolve(row || null);
-          }
-        });
-      });
-    });
-  },
-  
-  // Save or update notification settings for a user and location
-  async updateSettings(userId, location, settings) {
-    logger.log(`Updating settings for user ID: ${userId}, location: ${location}`);
-    return new Promise((resolve, reject) => {
-      // Default values
-      const defaults = {
-        chat_id: '',
-        enabled: false,
-        temperature_enabled: false,
-        temperature_min: 18,
-        temperature_max: 28,
-        humidity_enabled: false,
-        humidity_min: 30,
-        humidity_max: 70,
-        pressure_enabled: false,
-        pressure_min: 980,
-        pressure_max: 1030,
-        notification_frequency_minutes: 30,
-        notification_language: 'en'
-      };
-      
-      // Merge provided settings with defaults
-      const mergedSettings = { ...defaults, ...settings };
-      logger.log(`Merged settings for update`);
-      
-      // First check which columns actually exist in the table
-      db.all("PRAGMA table_info(notification_settings)", [], (err, columns) => {
-        if (err) {
-          logger.error(`Failed to get columns info: ${err.message}`);
-          return reject(err);
-        }
-        
-        // Get the actual column names in the table
-        const existingColumns = columns.map(col => col.name);
-        logger.log(`Found ${existingColumns.length} columns in notification_settings table`);
-        
-        // Create a mapping only for columns that exist in the database
-        const columnMapping = {
-          'user_id': userId,
-          'location': location,
-          'chat_id': mergedSettings.chat_id,
-          'enabled': mergedSettings.enabled ? 1 : 0,
-          'temperature_enabled': mergedSettings.temperature_enabled ? 1 : 0,
-          'temperature_min': mergedSettings.temperature_min,
-          'temperature_max': mergedSettings.temperature_max,
-          'humidity_enabled': mergedSettings.humidity_enabled ? 1 : 0,
-          'humidity_min': mergedSettings.humidity_min,
-          'humidity_max': mergedSettings.humidity_max,
-          'pressure_enabled': mergedSettings.pressure_enabled ? 1 : 0,
-          'pressure_min': mergedSettings.pressure_min,
-          'pressure_max': mergedSettings.pressure_max,
-          'notification_frequency_minutes': mergedSettings.notification_frequency_minutes,
-          'notification_language': mergedSettings.notification_language,
-          'send_charts': mergedSettings.send_charts !== undefined ? (mergedSettings.send_charts ? 1 : 0) : 1
-        };
-        
-        // Add threshold type columns only if they exist in the database
-        if (existingColumns.includes('temperature_threshold_type')) {
-          columnMapping['temperature_threshold_type'] = mergedSettings.temperature_threshold_type || 'range';
-        }
-        
-        if (existingColumns.includes('humidity_threshold_type')) {
-          columnMapping['humidity_threshold_type'] = mergedSettings.humidity_threshold_type || 'range';
-        }
-        
-        if (existingColumns.includes('pressure_threshold_type')) {
-          columnMapping['pressure_threshold_type'] = mergedSettings.pressure_threshold_type || 'range';
-        }
-        
-        // Handle offline_notification_enabled separately for debugging and clarity
-        if (existingColumns.includes('offline_notification_enabled')) {
-          // Log the raw value before conversion
-          logger.log(`Raw offline_notification_enabled value: ${mergedSettings.offline_notification_enabled}`);
-          
-          // Convert to strict 0 or 1
-          const offlineValue = mergedSettings.offline_notification_enabled === true ? 1 : 0;
-          
-          // Log the converted value
-          logger.log(`Converting offline_notification_enabled to ${offlineValue}`);
-          
-          columnMapping['offline_notification_enabled'] = offlineValue;
-        }
-        
-        // Filter to only include columns that actually exist in the database
-        const validColumns = Object.keys(columnMapping).filter(col => 
-          existingColumns.includes(col) && columnMapping[col] !== undefined
-        );
-        
-        // Generate column list and parameter values
-        const columnList = validColumns;
-        const paramValues = validColumns.map(col => columnMapping[col]);
-        
-        logger.log(`Updating ${validColumns.length} columns`);
-        
-        const placeholders = columnList.map(() => '?').join(',');
-        
-        const updateQuery = `
-          INSERT OR REPLACE INTO notification_settings 
-          (${columnList.join(', ')}, updated_at)
-          VALUES (${placeholders}, CURRENT_TIMESTAMP)
-        `;
-        
-        logger.log(`Executing SQL update query`);
-        
-        db.run(updateQuery, paramValues, function(err) {
-          if (err) {
-            logger.error(`Database error: ${err.message}`);
-            reject(err);
-          } else {
-            logger.log(`Settings updated successfully for user ID: ${userId}, location: ${location}`);
-            resolve({ 
-              success: true, 
-              message: 'Notification settings updated successfully',
-              id: this.lastID
-            });
-          }
-        });
-      });
-    });
-  },
-  
-  // Update chat ID for all user's notification settings
-  async updateChatId(userId, chatId) {
-    logger.log(`Updating chat ID for user ID: ${userId}`);
-    return new Promise((resolve, reject) => {
-      // Get all settings for this user first
-      this.getUserSettings(userId)
-        .then(settings => {
-          // If there are no settings, we need to create them
-          if (settings.length === 0) {
-            logger.log(`No settings found for user ID: ${userId}, attempting to create default settings`);
-            // We need to fetch locations to create settings
-            return Promise.resolve([]);
-          }
-          return Promise.resolve(settings);
-        })
-        .then(settings => {
-          // Use a direct update query for the chat_id
-          db.run(
-            `UPDATE notification_settings 
-            SET chat_id = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = ?`,
-            [chatId, userId],
-            function(err) {
-              if (err) {
-                logger.error(`Database error updating chat_id: ${err.message}`);
-                reject(err);
-              } else {
-                logger.log(`Chat ID updated successfully for user ID: ${userId}, changes: ${this.changes}`);
-                resolve({ 
-                  success: true, 
-                  message: 'Chat ID updated successfully',
-                  updated: this.changes
-                });
-              }
-            }
-          );
-        })
-        .catch(err => {
-          logger.error(`Error in updateChatId: ${err.message}`);
-          reject(err);
-        });
-    });
-  },
-  
-  // Enable or disable all notifications for a user
-  async setEnabled(userId, enabled) {
-    logger.log(`Setting enabled=${enabled} for user ID: ${userId}`);
-    return new Promise((resolve, reject) => {
-      db.run(
-        `UPDATE notification_settings 
-        SET enabled = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ?`,
-        [enabled ? 1 : 0, userId],
-        function(err) {
-          if (err) {
-            logger.error(`Database error: ${err.message}`);
-            reject(err);
-          } else {
-            logger.log(`Enabled state updated to ${enabled} for user ID: ${userId}, changes: ${this.changes}`);
-            resolve({ 
-              success: true, 
-              message: enabled ? 'Notifications enabled' : 'Notifications disabled',
-              updated: this.changes
-            });
-          }
-        }
-      );
-    });
-  },
-  
-  // Delete notification settings for a user
-  async deleteUserSettings(userId) {
-    return new Promise((resolve, reject) => {
-      db.run(
-        'DELETE FROM notification_settings WHERE user_id = ?',
-        [userId],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve({ 
-              success: true, 
-              message: 'Notification settings deleted',
-              deleted: this.changes
-            });
-          }
-        }
-      );
-    });
-  },
-  
-  // Delete notification settings for a specific location
-  async deleteLocationSettings(userId, location) {
-    return new Promise((resolve, reject) => {
-      db.run(
-        'DELETE FROM notification_settings WHERE user_id = ? AND location = ?',
+      db.get(
+        'SELECT * FROM notification_settings WHERE user_id = ? AND location = ?',
         [userId, location],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve({ 
-              success: true, 
-              message: `Notification settings for ${location} deleted`,
-              deleted: this.changes > 0
-            });
-          }
-        }
-      );
-    });
-  },
-  
-  // Update notification frequency for all user's notification settings
-  async updateFrequency(userId, frequencyMinutes) {
-    return new Promise((resolve, reject) => {
-      db.run(
-        `UPDATE notification_settings 
-        SET notification_frequency_minutes = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ?`,
-        [frequencyMinutes, userId],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve({ 
-              success: true, 
-              message: 'Notification frequency updated successfully',
-              updated: this.changes
-            });
-          }
-        }
-      );
-    });
-  },
-  
-  // Update notification language for all user's locations
-  async updateLanguage(userId, language) {
-    return new Promise((resolve, reject) => {
-      // Validate language
-      const validLang = ['en', 'sk'].includes(language) ? language : 'en';
-      
-      db.run(
-        `UPDATE notification_settings 
-         SET notification_language = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE user_id = ?`,
-        [validLang, userId],
-        function(err) {
-          if (err) {
-            reject(err);
-          } else {
-            resolve({
-              success: true,
-              message: 'Notification language updated successfully',
-              changes: this.changes
-            });
-          }
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
         }
       );
     });
@@ -1505,13 +1308,29 @@ const resetUserPassword = (userId, newPassword) => {
   });
 };
 
+// Export database functions
 module.exports = {
   db,
+  getConnection,
+  closeDatabase: async () => {
+    // Close each connection in the pool
+    for (const conn of connectionPool) {
+      conn.close();
+    }
+    
+    // Clear the pool
+    connectionPool.length = 0;
+    
+    // Close the main db connection
+    return new Promise((resolve, reject) => {
+      db.close(err => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  },
   users,
-  locationColors,
-  userSettings,
-  notificationSettings,
-  closeDatabase,
-  getAllUsers,
-  resetUserPassword
+  settings: userSettings,
+  colors: locationColors,
+  notificationSettings
 }; 

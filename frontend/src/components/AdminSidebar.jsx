@@ -9,7 +9,7 @@ import * as api from '../services/api';
 /**
  * Admin Sidebar component for the Admin panel
  */
-function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings = false, onHideLocation, onToggleUsersManagement }) {
+function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings = false, onHideLocation, onToggleUsersManagement, onToggleTelegramSettings }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [newLocation, setNewLocation] = useState("");
@@ -45,7 +45,8 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
       import: false,
       help: false,
       manageSensors: false,
-      usersManagement: false
+      usersManagement: false,
+      telegramSettings: false
     };
   });
   
@@ -215,6 +216,14 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
           </button>
           
           <button
+            onClick={onToggleTelegramSettings}
+            className="w-full flex items-center p-2 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 mb-2 text-left"
+          >
+            <span className="text-base mr-3">🔔</span>
+            <span className="text-sm">{t('telegramAlerts') || 'Telegram Alerts'}</span>
+          </button>
+          
+          <button
             onClick={() => i18n.changeLanguage(i18n.language === 'sk' ? 'en' : 'sk')}
             className="w-full flex items-center p-2 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 mb-2 text-left"
           >
@@ -279,9 +288,11 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
                   <button
                     onClick={handleAddLocation}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded shadow text-sm"
+                    data-action="add-location"
                   >
                     {t('add')}
                   </button>
+                  <div data-container="add-location-messages"></div>
                 </div>
               </div>
             </div>
@@ -418,6 +429,37 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
                 </button>
               </div>
               <UsersManagement t={t} isCompact={true} />
+            </div>
+          )}
+        </div>
+        
+        {/* Telegram Settings Section */}
+        <div className="border-b border-gray-200 dark:border-gray-700">
+          <button 
+            className={`w-full flex items-center justify-between p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${expandedSections.telegramSettings ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+            onClick={() => toggleSection('telegramSettings')}
+          >
+            <div className="flex items-center text-left">
+              <span className="text-base mr-3">🔔</span>
+              <span className="font-medium text-sm">{t('telegramAlerts') || "Telegram Alerts"}</span>
+            </div>
+            <span className="text-gray-500 transform transition-transform duration-200">{expandedSections.telegramSettings ? '▼' : '▶'}</span>
+          </button>
+          
+          {expandedSections.telegramSettings && (
+            <div className="p-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+              <div className="mb-3">
+                <button
+                  onClick={onToggleTelegramSettings}
+                  className="w-full px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center text-sm"
+                >
+                  <span className="mr-1">↗️</span>
+                  <span>{t('showInMainView') || 'Show in Main View'}</span>
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                {t('telegramNotificationsInfo') || 'Configure Telegram notifications for your sensors.'}
+              </p>
             </div>
           )}
         </div>

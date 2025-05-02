@@ -1,5 +1,7 @@
 {
   "dependencies": {
+    "canvas": "2.11.2",
+    "node-pre-gyp": "0.17.0",
     "react-beautiful-dnd": "^13.1.1"
   }
 }

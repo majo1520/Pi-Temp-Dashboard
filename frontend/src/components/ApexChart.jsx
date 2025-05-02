@@ -537,9 +537,9 @@ function ApexChart({
           colorScale: {
             ranges: [
               { from: -1, to: -1, name: t('noData'), color: "#808080" },
-              { from: 0, to: completeThresholds.teplota.min, name: t('thresholdMin'), color: completeThresholds.teplota.colorMin },
-              { from: completeThresholds.teplota.min, to: completeThresholds.teplota.mid, name: t('thresholdMid'), color: completeThresholds.teplota.colorMid },
-              { from: completeThresholds.teplota.mid, to: 999999, name: t('thresholdHigh'), color: completeThresholds.teplota.colorHigh },
+              { from: 0, to: completeThresholds[fieldName || 'teplota'].min, name: t('thresholdMin'), color: completeThresholds[fieldName || 'teplota'].colorMin },
+              { from: completeThresholds[fieldName || 'teplota'].min, to: completeThresholds[fieldName || 'teplota'].mid, name: t('thresholdMid'), color: completeThresholds[fieldName || 'teplota'].colorMid },
+              { from: completeThresholds[fieldName || 'teplota'].mid, to: 999999, name: t('thresholdHigh'), color: completeThresholds[fieldName || 'teplota'].colorHigh },
             ],
           },
         },
@@ -817,7 +817,7 @@ function ApexChart({
   const toggleFullScreen = () => {
     try {
       if (!document.fullscreenElement) {
-        const chartContainer = document.querySelector(".chart-container");
+        const chartContainer = chartRef.current;
         if (chartContainer) {
           if (chartContainer.requestFullscreen) {
             chartContainer.requestFullscreen()

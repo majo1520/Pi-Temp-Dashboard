@@ -118,7 +118,7 @@ export function FilterProvider({ children }) {
       const userPrefersMatrix = chartContextRef.current.preferMatrixHeatmap;
       
       // For longer time ranges (30d and above), check user preference
-      if (rangeKey === "30d" || rangeKey === "90d" || rangeKey === "365d" || 
+      if (rangeKey === "30d" || rangeKey === "90d" || rangeKey === "180d" || rangeKey === "365d" || 
           (rangeKey === "custom" && customApplied)) {
         // If user doesn't prefer matrix, use calendar for these ranges
         if (!userPrefersMatrix) {

@@ -26,6 +26,31 @@ function UsersManagement({ t, isCompact = false }) {
     roles: []
   });
   
+  // Add state to track current logged-in user
+  const [currentUser, setCurrentUser] = useState(null);
+  
+  // Get current session user on component mount
+  useEffect(() => {
+    const getSessionUser = async () => {
+      try {
+        const response = await fetch('/api/session', {
+          credentials: 'include'
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.loggedIn && data.user) {
+            setCurrentUser(data.user);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to get session user:', err);
+      }
+    };
+    
+    getSessionUser();
+  }, []);
+  
   // State for confirming user deletion
   const [deleteConfirmation, setDeleteConfirmation] = useState({
     isDeleting: false,
@@ -196,6 +221,14 @@ function UsersManagement({ t, isCompact = false }) {
   // Handle form input changes for editing
   const handleEditInputChange = (e) => {
     const { name, value, type, checked } = e.target;
+    
+    // Check if user is trying to deactivate their own account
+    if (name === 'active' && !checked && currentUser && 
+        currentUser.username === editUserData.username) {
+      setError(t('cannotDeactivateOwnAccount') || "Cannot deactivate your own account");
+      return;
+    }
+    
     setEditUserData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
@@ -205,6 +238,14 @@ function UsersManagement({ t, isCompact = false }) {
   // Handle role selection changes for editing
   const handleEditRoleChange = (e) => {
     const { checked, value } = e.target;
+    
+    // Check if user is trying to remove admin role from their own account
+    if (value === 'admin' && !checked && currentUser && 
+        currentUser.username === editUserData.username) {
+      setError(t('cannotRemoveOwnAdminRole') || "Cannot remove admin role from your own account");
+      return;
+    }
+    
     setEditUserData(prev => {
       if (checked) {
         return { ...prev, roles: [...prev.roles, value] };
@@ -217,6 +258,21 @@ function UsersManagement({ t, isCompact = false }) {
   // Submit user edit
   const handleUpdateUser = async (e) => {
     e.preventDefault();
+    
+    // Validate changes if it's the current user
+    if (currentUser && currentUser.username === editUserData.username) {
+      // Check if admin role was removed
+      if (currentUser.roles.includes('admin') && !editUserData.roles.includes('admin')) {
+        setError(t('cannotRemoveOwnAdminRole') || "Cannot remove admin role from your own account");
+        return;
+      }
+      
+      // Check if account was deactivated
+      if (editUserData.active === false) {
+        setError(t('cannotDeactivateOwnAccount') || "Cannot deactivate your own account");
+        return;
+      }
+    }
     
     try {
       const { userId, username, email, active, roles } = editUserData;

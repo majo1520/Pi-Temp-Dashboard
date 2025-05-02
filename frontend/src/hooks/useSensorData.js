@@ -346,14 +346,26 @@ function useSensorData({
       .filter(point => point.time && !isNaN(point.time) && !isNaN(point.value))
       .sort((a, b) => a.time - b.time);
 
-    // For longer ranges, use adaptive sampling
+    // Calculate total days in this range
+    const days = (endTime - startTime) / (1000 * 60 * 60 * 24);
+    console.log(`Processing data range spanning ${days.toFixed(1)} days with ${sortedData.length} points`);
+
+    // For longer ranges, use adaptive sampling based on total days
     let samplingInterval = gapInterval;
     if (rangeKey === '30d') {
       samplingInterval = 3600000; // 1 hour for 30d
     } else if (rangeKey === '180d') {
       samplingInterval = 10800000; // 3 hours for 180d
     } else if (rangeKey === '365d') {
-      samplingInterval = 21600000; // 6 hours for 365d
+      // For 365d, use an adaptive approach based on data density
+      if (sortedData.length > 5000) {
+        samplingInterval = 43200000; // 12 hours for dense datasets
+      } else if (sortedData.length > 2000) {
+        samplingInterval = 21600000; // 6 hours for medium datasets
+      } else {
+        samplingInterval = 10800000; // 3 hours for sparse datasets
+      }
+      console.log(`Using adaptive 365d sampling interval: ${samplingInterval / 3600000} hours based on ${sortedData.length} points`);
     }
 
     // Process data with adaptive sampling
@@ -385,6 +397,41 @@ function useSensorData({
         time: currentBucket,
         value: Number(avgValue.toFixed(2))
       });
+    }
+
+    // For 365d, ensure we have sufficient status change points to accurately represent online/offline transitions
+    if (rangeKey === '365d') {
+      // Find points where status changes (values make significant jumps)
+      const statusChangePoints = [];
+      for (let i = 1; i < sortedData.length; i++) {
+        const prev = sortedData[i-1];
+        const curr = sortedData[i];
+        
+        // Consider significant changes that aren't already close to a bucket boundary
+        const valueDelta = Math.abs(curr.value - prev.value);
+        const timeDelta = curr.time - prev.time;
+        
+        // Add status change point if:
+        // 1. Large value change in a short time, or
+        // 2. There's a large gap in the data (potential offline period)
+        if ((valueDelta > 10 && timeDelta < samplingInterval) || timeDelta > samplingInterval * 2) {
+          const nearestBucket = processedData.find(p => Math.abs(p.time - curr.time) < samplingInterval/2);
+          if (!nearestBucket) {
+            statusChangePoints.push({
+              time: curr.time,
+              value: curr.value
+            });
+          }
+        }
+      }
+      
+      // Add these status change points to the processed data
+      if (statusChangePoints.length > 0) {
+        processedData.push(...statusChangePoints);
+        // Re-sort the data by time
+        processedData.sort((a, b) => a.time - b.time);
+        console.log(`Added ${statusChangePoints.length} status change points to 365d data`);
+      }
     }
 
     // Fill gaps in processed data
