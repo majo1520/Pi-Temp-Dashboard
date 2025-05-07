@@ -9,7 +9,18 @@ import * as api from '../services/api';
 /**
  * Admin Sidebar component for the Admin panel
  */
-function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings = false, onHideLocation, onToggleUsersManagement, onToggleTelegramSettings }) {
+function AdminSidebar({ 
+  isOpen = true,
+  onReloadSensors = () => {},
+  sensors = [], 
+  onAddLocation = () => {}, 
+  excludeSettings = false, 
+  onHideLocation = () => {}, 
+  onToggleUsersManagement = () => {}, 
+  onToggleTelegramSettings = () => {},
+  onToggleSystemMonitoring = () => {},
+  onToggleSensorManagement = () => {}
+}) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [newLocation, setNewLocation] = useState("");
@@ -46,7 +57,8 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
       help: false,
       manageSensors: false,
       usersManagement: false,
-      telegramSettings: false
+      telegramSettings: false,
+      systemMonitoring: false
     };
   });
   
@@ -66,7 +78,7 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
   // Add a new effect to initialize location order based on sensors
   useEffect(() => {
     // Initialize location order if it's empty and we have sensors
-    if (locationOrder.length === 0 && sensors.length > 0) {
+    if (locationOrder.length === 0 && Array.isArray(sensors) && sensors.length > 0) {
       const allLocations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
       if (allLocations.length > 0) {
         setLocationOrder(allLocations);
@@ -132,7 +144,9 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
     setLocationOrder(prev => {
       // If location isn't in order yet, initialize the order first
       if (prev.length === 0) {
-        const allLocations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
+        const allLocations = Array.isArray(sensors) && sensors.length > 0 
+          ? [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))]
+          : [];
         prev = [...allLocations];
       }
       
@@ -152,7 +166,9 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
     setLocationOrder(prev => {
       // If location isn't in order yet, initialize the order first
       if (prev.length === 0) {
-        const allLocations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
+        const allLocations = Array.isArray(sensors) && sensors.length > 0 
+          ? [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))]
+          : [];
         prev = [...allLocations];
       }
       
@@ -181,77 +197,188 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
   
   return (
     <aside
-      className="w-56 flex flex-col dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800"
+      className={`w-56 flex flex-col dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 transition-all overflow-y-auto ${isOpen ? '' : 'w-0 -ml-56 opacity-0'}`}
       style={{ height: "100vh" }}
     >
       <div className="flex items-center justify-center py-4 border-b border-gray-200 dark:border-gray-800">
         <h2 className="text-lg font-medium text-gray-800 dark:text-white">{t('adminPanelTitle')}</h2>
       </div>
       
-      <div className="flex-1 overflow-y-auto">
         {/* Navigation Actions */}
         <div className="p-3 border-b border-gray-200 dark:border-gray-700">
-          <button
-            onClick={() => navigate("/")}
-            className="w-full flex items-center p-2 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 mb-2 text-left"
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700 rounded mb-2">
+            <div className="flex items-center">
+              <span className="mr-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7m-7-7v14" />
+                </svg>
+              </span>
+              <span onClick={() => navigate("/")} className="text-sm cursor-pointer">{t('dashboardTitle')}</span>
+            </div>
+            <button 
+              onClick={() => navigate("/")}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        {/* Sensor Management button directly under T-monitor navigation */}
+        <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700 rounded mb-2">
+          <div className="flex items-center">
+            <span className="mr-3">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+            </span>
+            <span onClick={onToggleSensorManagement} className="text-sm cursor-pointer">{t('manageSensors') || 'Manage Sensors'}</span>
+          </div>
+          <button 
+            onClick={onToggleSensorManagement}
+            className="bg-blue-600 text-white rounded p-1"
           >
-            <span className="text-base mr-3">🏠</span>
-            <span className="text-sm">{t('dashboardTitle')}</span>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+            </svg>
           </button>
+        </div>
           
-          <button
-            onClick={onReloadSensors}
-            className="w-full flex items-center p-2 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 mb-2 text-left"
-          >
-            <span className="text-base mr-3">🔄</span>
-            <span className="text-sm">{t('refresh')}</span>
-          </button>
-          
-          <button
-            onClick={onToggleUsersManagement}
-            className="w-full flex items-center p-2 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 mb-2 text-left"
-          >
-            <span className="text-base mr-3">👥</span>
-            <span className="text-sm">{t('toggleUsersView') || 'Toggle Users View'}</span>
-          </button>
-          
-          <button
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700 rounded mb-2">
+            <div className="flex items-center">
+              <span className="mr-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </span>
+              <span onClick={onToggleSystemMonitoring} className="text-sm cursor-pointer">{t('systemHealth') || 'System Health'}</span>
+            </div>
+            <button 
+              onClick={onToggleSystemMonitoring}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700 rounded mb-2">
+            <div className="flex items-center">
+              <span className="mr-3">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.96 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+                </svg>
+              </span>
+            <span onClick={onToggleTelegramSettings} className="text-sm cursor-pointer">{t('telegramAlerts') || 'Telegram Alerts'}</span>
+            </div>
+            <button 
             onClick={onToggleTelegramSettings}
-            className="w-full flex items-center p-2 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 mb-2 text-left"
-          >
-            <span className="text-base mr-3">🔔</span>
-            <span className="text-sm">{t('telegramAlerts') || 'Telegram Alerts'}</span>
-          </button>
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700 rounded mb-2">
+            <div className="flex items-center">
+              <span className="mr-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              </span>
+              <span onClick={onToggleUsersManagement} className="text-sm cursor-pointer">{t('userManagement')}</span>
+            </div>
+            <button 
+              onClick={onToggleUsersManagement}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
           
-          <button
-            onClick={() => i18n.changeLanguage(i18n.language === 'sk' ? 'en' : 'sk')}
-            className="w-full flex items-center p-2 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 mb-2 text-left"
-          >
-            <span className="text-base mr-3">🌍</span>
-            <span className="text-sm">{i18n.language === 'sk' ? 'SK / EN' : 'EN / SK'}</span>
-          </button>
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700 rounded mb-2">
+            <div className="flex items-center">
+              <span className="mr-3">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </span>
+            <span onClick={onReloadSensors} className="text-sm cursor-pointer">{t('refresh') || 'Refresh'}</span>
+            </div>
+            <button 
+            onClick={onReloadSensors}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
           
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center p-2 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 text-left"
-          >
-            <span className="text-base mr-3">🚪</span>
-            <span className="text-sm">{t('logout')}</span>
-          </button>
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700 rounded mb-2">
+            <div className="flex items-center">
+              <span className="mr-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                </svg>
+              </span>
+              <span onClick={() => i18n.changeLanguage(i18n.language === 'sk' ? 'en' : 'sk')} className="text-sm cursor-pointer">{t('language')}</span>
+            </div>
+            <button 
+              onClick={() => i18n.changeLanguage(i18n.language === 'sk' ? 'en' : 'sk')}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="flex items-center justify-between p-2 hover:bg-red-50 text-red-600 rounded mb-2">
+            <div className="flex items-center">
+              <span className="mr-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+              </span>
+              <span onClick={handleLogout} className="text-sm cursor-pointer">{t('logout')}</span>
+            </div>
+            <button 
+              onClick={handleLogout}
+              className="bg-red-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
         </div>
         
         {/* Export Data Section */}
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <button 
-            className={`w-full flex items-center justify-between p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${expandedSections.export ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-            onClick={() => toggleSection('export')}
-          >
-            <div className="flex items-center text-left">
-              <span className="text-base mr-3">📤</span>
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700">
+            <div className="flex items-center">
+            <span className="mr-3">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </span>
               <span className="font-medium text-sm">{t('exportData')}</span>
             </div>
-            <span className="text-gray-500 transform transition-transform duration-200">{expandedSections.export ? '▼' : '▶'}</span>
-          </button>
+            <button 
+              onClick={() => toggleSection('export')}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
           
           {expandedSections.export && (
             <div className="p-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
@@ -262,16 +389,24 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
         
         {/* Add Location Section */}
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <button 
-            className={`w-full flex items-center justify-between p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${expandedSections.addLocation ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-            onClick={() => toggleSection('addLocation')}
-          >
-            <div className="flex items-center text-left">
-              <span className="text-base mr-3">➕</span>
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700">
+            <div className="flex items-center">
+            <span className="mr-3">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            </span>
               <span className="font-medium text-sm">{t('addNewLocation')}</span>
             </div>
-            <span className="text-gray-500 transform transition-transform duration-200">{expandedSections.addLocation ? '▼' : '▶'}</span>
-          </button>
+            <button 
+              onClick={() => toggleSection('addLocation')}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
           
           {expandedSections.addLocation && (
             <div className="p-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700" style={{ textAlign: 'left' }}>
@@ -301,16 +436,24 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
         
         {/* Import Section */}
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <button 
-            className={`w-full flex items-center justify-between p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${expandedSections.import ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-            onClick={() => toggleSection('import')}
-          >
-            <div className="flex items-center text-left">
-              <span className="text-base mr-3">📥</span>
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700">
+            <div className="flex items-center">
+            <span className="mr-3">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+            </span>
               <span className="font-medium text-sm">{t('importTitle')}</span>
             </div>
-            <span className="text-gray-500 transform transition-transform duration-200">{expandedSections.import ? '▼' : '▶'}</span>
-          </button>
+            <button 
+              onClick={() => toggleSection('import')}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
           
           {expandedSections.import && (
             <div className="p-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700" style={{ textAlign: 'left' }}>
@@ -319,18 +462,27 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
           )}
         </div>
         
-        {/* Manage Sensors Section */}
+      {/* Manage Locations Section */}
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <button 
-            className={`w-full flex items-center justify-between p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${expandedSections.manageSensors ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-            onClick={() => toggleSection('manageSensors')}
-          >
-            <div className="flex items-center text-left">
-              <span className="text-base mr-3">🔍</span>
-              <span className="font-medium text-sm">{t('manageSensors') || "Správa senzorov"}</span>
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700">
+            <div className="flex items-center">
+            <span className="mr-3">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </span>
+            <span className="font-medium text-sm">{t('manageLocations')}</span>
             </div>
-            <span className="text-gray-500 transform transition-transform duration-200">{expandedSections.manageSensors ? '▼' : '▶'}</span>
-          </button>
+            <button 
+              onClick={() => toggleSection('manageSensors')}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
           
           {expandedSections.manageSensors && (
             <div className="p-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
@@ -406,16 +558,24 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
         
         {/* Users Management Section */}
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <button 
-            className={`w-full flex items-center justify-between p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${expandedSections.usersManagement ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-            onClick={() => toggleSection('usersManagement')}
-          >
-            <div className="flex items-center text-left">
-              <span className="text-base mr-3">👥</span>
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700">
+            <div className="flex items-center">
+            <span className="mr-3">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            </span>
               <span className="font-medium text-sm">{t('userManagement') || "Manage Users"}</span>
             </div>
-            <span className="text-gray-500 transform transition-transform duration-200">{expandedSections.usersManagement ? '▼' : '▶'}</span>
-          </button>
+            <button 
+              onClick={() => toggleSection('usersManagement')}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
           
           {expandedSections.usersManagement && (
             <div className="p-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
@@ -435,16 +595,24 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
         
         {/* Telegram Settings Section */}
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <button 
-            className={`w-full flex items-center justify-between p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${expandedSections.telegramSettings ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-            onClick={() => toggleSection('telegramSettings')}
-          >
-            <div className="flex items-center text-left">
-              <span className="text-base mr-3">🔔</span>
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700">
+            <div className="flex items-center">
+            <span className="mr-3">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+            </span>
               <span className="font-medium text-sm">{t('telegramAlerts') || "Telegram Alerts"}</span>
             </div>
-            <span className="text-gray-500 transform transition-transform duration-200">{expandedSections.telegramSettings ? '▼' : '▶'}</span>
-          </button>
+            <button 
+              onClick={() => toggleSection('telegramSettings')}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
           
           {expandedSections.telegramSettings && (
             <div className="p-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
@@ -466,16 +634,24 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
         
         {/* Help Section */}
         <div className="border-b border-gray-200 dark:border-gray-700">
-          <button 
-            className={`w-full flex items-center justify-between p-3 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors ${expandedSections.help ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
-            onClick={() => toggleSection('help')}
-          >
-            <div className="flex items-center text-left">
-              <span className="text-base mr-3">❓</span>
+          <div className="flex items-center justify-between p-2 hover:bg-gray-100 text-gray-700">
+            <div className="flex items-center">
+            <span className="mr-3">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </span>
               <span className="font-medium text-sm">{t('help')}</span>
             </div>
-            <span className="text-gray-500 transform transition-transform duration-200">{expandedSections.help ? '▼' : '▶'}</span>
-          </button>
+            <button 
+              onClick={() => toggleSection('help')}
+              className="bg-blue-600 text-white rounded p-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
           
           {expandedSections.help && (
             <div className="p-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
@@ -497,7 +673,6 @@ function AdminSidebar({ onReloadSensors, sensors, onAddLocation, excludeSettings
               </div>
             </div>
           )}
-        </div>
       </div>
     </aside>
   );

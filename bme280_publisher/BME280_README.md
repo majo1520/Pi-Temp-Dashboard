@@ -12,6 +12,18 @@ This component reads temperature, humidity, pressure, and altitude data from a B
 - **Service integration**: Runs as a system service with auto-restart
 - **Status reporting**: Reports online/offline status
 
+## New Features and Enhancements
+
+The publisher has been enhanced for improved accuracy and long-term reliability:
+
+- **Multi-sample readings** with outlier rejection for higher accuracy
+- **Advanced filtering** with configurable oversampling and IIR filtering
+- **Temporal smoothing** using exponential smoothing algorithm
+- **Improved error handling** with intelligent recovery mechanisms
+- **Detailed diagnostics** and quality metrics in logs
+
+For details on these enhancements and how to configure them for optimal performance, see the [Publisher Enhancements](PUBLISHER_ENHANCEMENTS.md) documentation.
+
 ## Hardware Requirements
 
 - Raspberry Pi or similar SBC with I2C support

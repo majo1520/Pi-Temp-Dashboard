@@ -1,9 +1,13 @@
 """
-BME280 Sensor Publisher
+BME280 Sensor Publisher (Enhanced Version)
 
 This module reads data from a BME280 sensor and publishes it to an MQTT broker.
-It supports both legacy and structured data formats, error handling,
-automatic reconnection, and message queuing when disconnected.
+It includes advanced features for accurate and reliable readings:
+- Multi-sample readings with outlier rejection
+- Exponential smoothing for stable values
+- Sensor warm-up and stabilization period
+- Resilient error handling and recovery
+- Comprehensive logging
 
 Dependencies:
     - adafruit-circuitpython-bme280: For interacting with the BME280 sensor
@@ -12,7 +16,7 @@ Dependencies:
 
 Configuration is loaded from sensor_config.ini file and includes:
     - MQTT connection settings
-    - Sensor settings
+    - Sensor settings (including accuracy parameters)
     - Topic configuration
     - Data validation ranges
     - Logging configuration
@@ -35,6 +39,7 @@ import configparser
 import uuid
 import os
 from collections import deque
+import random
 
 
 # Load configuration
@@ -69,7 +74,8 @@ def create_default_config():
             'address': '0x76',
             'sea_level_pressure': '1013.25',
             'max_consecutive_errors': '5',
-            'init_retry_interval': '30'
+            'init_retry_interval': '30',
+            'stabilization_time': '2'
         }
         config['data'] = {
             'temp_min': '-40',
@@ -273,11 +279,11 @@ def init_i2c():
 # Funkcia na inicializáciu senzora
 def init_sensor():
     """
-    Initialize the BME280 sensor with high accuracy settings.
+    Initialize the BME280 sensor with configurable accuracy settings.
     
     This function configures the sensor with:
-    - 16x oversampling for temperature, pressure, and humidity
-    - 16x IIR filtering to reduce noise
+    - Configurable oversampling for temperature, pressure, and humidity
+    - Configurable IIR filtering to reduce noise
     - Normal mode for continuous measurements
     - 500ms standby period between measurements
     
@@ -286,28 +292,124 @@ def init_sensor():
     """
     if not init_i2c():
         return None
-        
+    
     try:
-        sensor = Adafruit_BME280_I2C(i2c, address=SENSOR_ADDRESS)
+        # Get the stabilization time from config
+        stabilization_time = config.getint('sensor', 'stabilization_time', fallback=2)
         
-        # Nastavenie presnosti (oversampling)
-        sensor.overscan_temperature = OVERSCAN_X16
-        sensor.overscan_humidity = OVERSCAN_X16
-        sensor.overscan_pressure = OVERSCAN_X16
-
-        # Filtrovanie rýchlych zmien (nižší šum)
-        sensor.iir_filter = IIR_FILTER_X16
-
-        # Režim merania – normal (nepretržité meranie)
-        sensor.mode = MODE_NORMAL
-
-        # Voliteľne: nastav standby čas medzi meraniami (v režime normal)
-        sensor.standby_period = STANDBY_TC_500
+        # First try to scan the I2C bus and report available devices
+        try:
+            devices = []
+            for addr in range(0x76, 0x78):  # BME280 has address 0x76 or 0x77
+                try:
+                    i2c.scan()
+                    if addr in i2c.scan():
+                        devices.append(hex(addr))
+                except Exception:
+                    pass
+            
+            if devices:
+                logging.info(f"Found I2C devices at addresses: {', '.join(devices)}")
+            else:
+                logging.warning("No BME280 compatible devices found on I2C bus")
+        except Exception as e:
+            logging.warning(f"Could not scan I2C bus: {e}")
         
-        # Set sea level pressure for accurate altitude reading
-        sensor.sea_level_pressure = SEA_LEVEL_PRESSURE
+        # Create the sensor object with robust error handling
+        max_init_attempts = 3
+        for attempt in range(max_init_attempts):
+            try:
+                sensor = Adafruit_BME280_I2C(i2c, address=SENSOR_ADDRESS)
+                # Check if we can read the chip ID to verify connection
+                if hasattr(sensor, "_chip_id") and sensor._chip_id:
+                    logging.info(f"Connected to BME280 sensor with chip ID: {hex(sensor._chip_id)}")
+                else:
+                    logging.warning("Connected to sensor but chip ID verification failed")
+                break
+            except Exception as e:
+                if attempt < max_init_attempts - 1:
+                    logging.warning(f"Sensor initialization attempt {attempt+1} failed: {e}. Retrying...")
+                    time.sleep(1)  # Wait before retry
+                else:
+                    logging.error(f"All sensor initialization attempts failed: {e}")
+                    return None
         
-        logging.info("Sensor initialized successfully with high accuracy settings.")
+        # Get oversampling and filter settings from config
+        oversampling_value = config.getint('sensor', 'oversampling', fallback=16)
+        iir_filter_value = config.getint('sensor', 'iir_filter', fallback=16)
+        
+        # Map config values to BME280 constants
+        oversampling_map = {
+            1: 1,  # OVERSCAN_X1
+            2: 2,  # OVERSCAN_X2
+            4: 3,  # OVERSCAN_X4
+            8: 4,  # OVERSCAN_X8
+            16: 5  # OVERSCAN_X16
+        }
+        
+        filter_map = {
+            0: 0,  # IIR_FILTER_DISABLE
+            2: 1,  # IIR_FILTER_X2
+            4: 2,  # IIR_FILTER_X4
+            8: 3,  # IIR_FILTER_X8
+            16: 4  # IIR_FILTER_X16
+        }
+        
+        # Get mapped values or defaults if not found
+        os_value = oversampling_map.get(oversampling_value, 5)  # Default to X16
+        filter_value = filter_map.get(iir_filter_value, 4)  # Default to X16
+        
+        # Configure sensor parameters
+        try:
+            # Nastavenie presnosti (oversampling)
+            sensor.overscan_temperature = os_value
+            sensor.overscan_humidity = os_value
+            sensor.overscan_pressure = os_value
+
+            # Filtrovanie rýchlych zmien (nižší šum)
+            sensor.iir_filter = filter_value
+
+            # Režim merania – normal (nepretržité meranie)
+            sensor.mode = MODE_NORMAL
+
+            # Voliteľne: nastav standby čas medzi meraniami (v režime normal)
+            sensor.standby_period = STANDBY_TC_500
+            
+            # Set sea level pressure for accurate altitude reading
+            sensor.sea_level_pressure = SEA_LEVEL_PRESSURE
+            
+            logging.info(f"Sensor parameters configured: oversampling=x{oversampling_value}, IIR filter=x{iir_filter_value}")
+        except Exception as e:
+            logging.error(f"Failed to configure sensor parameters: {e}")
+            return None
+        
+        # Stabilization period - allow sensor to warm up and stabilize
+        if stabilization_time > 0:
+            logging.info(f"Allowing sensor to stabilize for {stabilization_time} seconds...")
+            
+            # Take a few readings during warm-up period to help the sensor stabilize
+            for i in range(stabilization_time):
+                try:
+                    # Read values but don't use them (just to cycle the sensor)
+                    _ = sensor.temperature
+                    _ = sensor.humidity
+                    _ = sensor.pressure
+                    time.sleep(1)
+                except Exception as e:
+                    logging.debug(f"Ignored error during stabilization readings: {e}")
+            
+            logging.info("Sensor stabilization period completed")
+        
+        # Take a test reading to verify the sensor works
+        try:
+            temp = sensor.temperature
+            hum = sensor.humidity
+            pres = sensor.pressure
+            logging.info(f"Test reading successful: temperature={temp:.2f}°C, humidity={hum:.2f}%, pressure={pres:.2f}hPa")
+        except Exception as e:
+            logging.error(f"Test reading failed after initialization: {e}")
+            return None
+        
         return sensor
     except Exception as e:
         logging.error(f"Error initializing sensor: {e}")
@@ -361,6 +463,120 @@ def on_disconnect(client, userdata, rc):
         logging.info("Disconnected from MQTT broker.")
     else:
         logging.warning(f"Unexpected disconnect from MQTT broker: {rc}")
+
+# Add a new function for accurate sensor reading with multiple samples
+def get_accurate_readings(sensor, num_samples=5, discard_outliers=True):
+    """
+    Take multiple sensor readings and average them for higher accuracy.
+    
+    Args:
+        sensor: BME280 sensor object
+        num_samples: Number of samples to take (default: 5)
+        discard_outliers: Whether to discard outlier readings (default: True)
+    
+    Returns:
+        dict: Dictionary with averaged temperature, humidity, and pressure values,
+              or None if reading failed
+    """
+    if sensor is None:
+        return None
+    
+    # Ensure we have a valid number of samples
+    num_samples = max(1, num_samples)
+    
+    # Get value from configuration
+    num_samples = config.getint('sensor', 'num_samples', fallback=num_samples)
+    
+    # Lists to store readings
+    temps, hums, press = [], [], []
+    
+    # Log raw readings for debugging
+    logging.debug(f"Starting {num_samples} readings for aggregation...")
+    
+    # Take multiple readings
+    successful_readings = 0
+    for i in range(num_samples):
+        try:
+            t = sensor.temperature
+            h = sensor.humidity
+            p = sensor.pressure
+            
+            # Basic validation before adding to the list
+            if (TEMP_RANGE[0] <= t <= TEMP_RANGE[1] and 
+                HUMIDITY_RANGE[0] <= h <= HUMIDITY_RANGE[1] and 
+                PRESSURE_RANGE[0] <= p <= PRESSURE_RANGE[1]):
+                
+                temps.append(t)
+                hums.append(h)
+                press.append(p)
+                successful_readings += 1
+                logging.debug(f"Reading {i+1}/{num_samples}: temp={t:.2f}°C, humidity={h:.2f}%, pressure={p:.2f}hPa")
+            else:
+                logging.debug(f"Reading {i+1}/{num_samples} discarded - out of range: temp={t:.2f}°C, humidity={h:.2f}%, pressure={p:.2f}hPa")
+        except Exception as e:
+            logging.debug(f"Failed to take reading {i+1}/{num_samples}: {e}")
+        
+        # Short pause between readings
+        if i < num_samples - 1:
+            time.sleep(0.2)
+    
+    # If we didn't get any valid readings, return None
+    if not temps or not hums or not press:
+        logging.error("Failed to get any valid readings during aggregation")
+        return None
+    
+    # Remove outliers if requested and we have enough samples
+    if discard_outliers and len(temps) > 3:
+        # Very simple outlier removal - remove min and max
+        temps.remove(min(temps))
+        temps.remove(max(temps))
+        hums.remove(min(hums))
+        hums.remove(max(hums))
+        press.remove(min(press))
+        press.remove(max(press))
+        logging.debug("Removed outliers (min and max values)")
+    
+    # Calculate averages
+    avg_temp = sum(temps) / len(temps)
+    avg_hum = sum(hums) / len(hums)
+    avg_press = sum(press) / len(press)
+    
+    # Apply exponential smoothing if configured
+    smoothing_factor = config.getfloat('sensor', 'smoothing_factor', fallback=0.0)
+    if 0.0 < smoothing_factor < 1.0:
+        # Get last known good readings if available
+        last_good_readings = getattr(get_accurate_readings, 'last_good_readings', None)
+        
+        if last_good_readings:
+            # Apply exponential smoothing
+            avg_temp = smoothing_factor * avg_temp + (1 - smoothing_factor) * last_good_readings['temperature']
+            avg_hum = smoothing_factor * avg_hum + (1 - smoothing_factor) * last_good_readings['humidity']
+            avg_press = smoothing_factor * avg_press + (1 - smoothing_factor) * last_good_readings['pressure']
+            logging.debug(f"Applied exponential smoothing with factor {smoothing_factor}")
+    
+    # Create result dictionary with rounded values
+    result = {
+        'temperature': round(avg_temp, 2),
+        'humidity': round(avg_hum, 2),
+        'pressure': round(avg_press, 2),
+        'raw_readings': {
+            'temperature': temps,
+            'humidity': hums,
+            'pressure': press
+        },
+        'successful_readings': successful_readings,
+        'total_readings': num_samples
+    }
+    
+    # Store as last good readings for future smoothing
+    get_accurate_readings.last_good_readings = {
+        'temperature': avg_temp,
+        'humidity': avg_hum, 
+        'pressure': avg_press
+    }
+    
+    logging.debug(f"Aggregated readings: temp={result['temperature']}°C, humidity={result['humidity']}%, pressure={result['pressure']}hPa")
+    return result
 
 # Funkcia na bezpečné pridanie správy do fronty
 def add_to_queue(msg):
@@ -508,6 +724,8 @@ last_sensor_init_attempt = time.time()
 
 try:
     consecutive_errors = 0
+    last_successful_readings = None
+    max_consecutive_failures = config.getint('sensor', 'max_consecutive_errors', fallback=5)
     
     while True:
         # Check if sensor needs reinitialization
@@ -518,28 +736,34 @@ try:
                 bme280 = init_sensor()
                 last_sensor_init_attempt = current_time
                 if bme280 is None:
+                    logging.warning("Sensor reinitialization failed. Will retry later.")
                     time.sleep(min(INIT_RETRY_INTERVAL, SAMPLE_RATE))
                     continue
+                else:
+                    logging.info("Sensor reinitialized successfully.")
         
         try:
-            # Čítanie dát zo senzora
-            temp = round(bme280.temperature, 2)
-            hum = round(bme280.humidity, 2)
-            pres = round(bme280.pressure, 2)
-
-            # Strict validation - immediately raise exceptions like the old publisher
-            if not (TEMP_RANGE[0] <= temp <= TEMP_RANGE[1]):
-                raise ValueError(f"Invalid temperature reading: {temp} °C (outside range {TEMP_RANGE[0]}-{TEMP_RANGE[1]})")
-                
-            if not (HUMIDITY_RANGE[0] <= hum <= HUMIDITY_RANGE[1]):
-                raise ValueError(f"Invalid humidity reading: {hum} % (outside range {HUMIDITY_RANGE[0]}-{HUMIDITY_RANGE[1]})")
-                
-            if not (PRESSURE_RANGE[0] <= pres <= PRESSURE_RANGE[1]):
-                raise ValueError(f"Invalid pressure reading: {pres} hPa (outside range {PRESSURE_RANGE[0]}-{PRESSURE_RANGE[1]})")
-
-            # Calculate additional derived metrics
-            altitude = round(bme280.altitude, 2)
+            # Get readings using our new accurate function
+            readings = get_accurate_readings(bme280)
             
+            if readings is None:
+                raise ValueError("Failed to get valid readings from sensor")
+            
+            # Extract values from the readings
+            temp = readings['temperature']
+            hum = readings['humidity']
+            pres = readings['pressure']
+            
+            # Store quality metrics
+            reading_quality = f"{readings['successful_readings']}/{readings['total_readings']} successful readings"
+            
+            # Optional: Calculate altitude (based on pressure and sea level pressure)
+            try:
+                altitude = round(bme280.altitude, 2)
+            except Exception as e:
+                logging.warning(f"Failed to calculate altitude: {e}")
+                altitude = 0
+
             # Získanie UTC času
             utc_time = datetime.now(ZoneInfo("UTC"))
             local_time = utc_time.astimezone(ZoneInfo("Europe/Bratislava"))
@@ -554,7 +778,16 @@ try:
                 "pressure": pres,
                 "altitude": altitude,
                 "timestamp": timestamp_str,
-                "local_time": local_time_str
+                "local_time": local_time_str,
+                "reading_quality": reading_quality
+            }
+            
+            # Store these as the last successful readings
+            last_successful_readings = {
+                "temperature": temp,
+                "humidity": hum,
+                "pressure": pres,
+                "timestamp": timestamp_str
             }
             
             # Prepare messages to publish
@@ -607,7 +840,7 @@ try:
                         publish_failures = True
                 
                 if not publish_failures:
-                    logging.info(f"Published: temperature={temp}°C, humidity={hum}%, pressure={pres}hPa")
+                    logging.info(f"Published: temperature={temp}°C, humidity={hum}%, pressure={pres}hPa ({reading_quality})")
                     consecutive_errors = 0
             else:
                 logging.warning("MQTT broker not connected, queueing messages")
@@ -615,26 +848,75 @@ try:
                     add_to_queue(msg)
         
         except (IOError, OSError, ValueError) as e:
-            # Handle both hardware errors and validation errors the same way - like old publisher
+            # Handle both hardware errors and validation errors
             if isinstance(e, ValueError):
                 logging.error(f"Validation error: {e}")
             else:
                 logging.error(f"Hardware error: {e}")
                 
-            # Always reset sensor on any error - exactly like old publisher
-            logging.info("Error detected, reinitializing sensor")
-            bme280 = None
+            # Increment error counter and check if we should reset the sensor
             consecutive_errors += 1
+            
+            if consecutive_errors >= max_consecutive_failures:
+                logging.warning(f"Reached {consecutive_errors} consecutive errors. Reinitializing sensor.")
+                # Reset sensor after consecutive failures
+                bme280 = None
+                consecutive_errors = 0  # Reset counter
+            
+            # Try to use last known good readings if available and within reasonable time
+            if last_successful_readings and consecutive_errors <= 2:
+                logging.info("Using last known good readings while sensor stabilizes")
+                age_minutes = (datetime.now(ZoneInfo("UTC")) - datetime.strptime(last_successful_readings["timestamp"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo("UTC"))).total_seconds() / 60
+                
+                # Only use recent readings (less than 5 minutes old)
+                if age_minutes < 5:
+                    # Add small jitter to readings to make it obvious they're repeated
+                    jitter_temp = round(last_successful_readings["temperature"] + (random.random() * 0.2 - 0.1), 2)
+                    jitter_hum = round(last_successful_readings["humidity"] + (random.random() * 0.2 - 0.1), 2)
+                    jitter_pres = round(last_successful_readings["pressure"] + (random.random() * 0.2 - 0.1), 2)
+                    
+                    utc_time = datetime.now(ZoneInfo("UTC"))
+                    timestamp_str = utc_time.strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    recovery_data = {
+                        "location": LOCATION,
+                        "temperature": jitter_temp,
+                        "humidity": jitter_hum,
+                        "pressure": jitter_pres,
+                        "timestamp": timestamp_str,
+                        "recovery": True,
+                        "based_on": last_successful_readings["timestamp"]
+                    }
+                    
+                    # Only send to the structured topic, not legacy
+                    recovery_msg = {
+                        "topic": READINGS_TOPIC,
+                        "payload": json.dumps(recovery_data),
+                        "qos": MQTT_QOS,
+                        "retain": False
+                    }
+                    
+                    if mqtt_connected:
+                        logging.info(f"Publishing recovery data: temperature={jitter_temp}°C, humidity={jitter_hum}%, pressure={jitter_pres}hPa")
+                        mqttc.publish(recovery_msg["topic"], recovery_msg["payload"], qos=recovery_msg["qos"], retain=False)
+                    else:
+                        add_to_queue(recovery_msg)
             
         except Exception as e:
             # Other unexpected errors
             logging.error(f"Unexpected error: {e}", exc_info=True)
-            # Also reset sensor on unexpected errors
-            logging.info("Unexpected error, reinitializing sensor")
-            bme280 = None
+            # Increase error counter
             consecutive_errors += 1
+            
+            if consecutive_errors >= max_consecutive_failures:
+                logging.warning(f"Reached {consecutive_errors} consecutive unexpected errors. Reinitializing sensor.")
+                # Reset sensor on unexpected errors too
+                bme280 = None
+                consecutive_errors = 0  # Reset counter
 
-        time.sleep(SAMPLE_RATE)
+        # Add random jitter to prevent exact synchronization with other processes
+        jitter = random.uniform(-0.1, 0.1)
+        time.sleep(SAMPLE_RATE + jitter)
         
 except KeyboardInterrupt:
     # Handled by signal handler

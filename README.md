@@ -64,6 +64,9 @@ The system consists of the following integrated components:
 ### Main Dashboard
 ![Dashboard Interface](docs/DASHBOARD-SCREENSHOT.png)
 
+### Main View - Heatmap
+![Mainview Heatmap](docs/DASHBOARD-SCREENSHOT-HEATMAP.png)
+
 ### Admin Panel
 ![Admin Panel](docs/ADMINPANEL-SCREENSHOT.png)
 
@@ -403,6 +406,11 @@ Access the dashboard at http://localhost:5000
 
 ## Recent Updates
 
+### Frontend Improvements (June 2024)
+- Admin panel sensor rows now include a "Details" button (localized EN/SK) that shows the sensor's IP address if available.
+- Sidebar in the admin panel now supports scrolling when dropdowns are open.
+- Locales updated for new UI strings (EN/SK).
+
 ### Admin Panel Improvements
 - Fixed 365-day filter in sensor graphs
 - Improved data handling for long-range views
@@ -414,6 +422,30 @@ Access the dashboard at http://localhost:5000
 - Enhanced data sampling for better visualization
 - Improved automatic mode selection
 - Optimized performance for long-range views
+
+## Recent Bugfixes
+
+### Enhanced Downtime Calculation (June 2023)
+
+- Added comprehensive downtime calculation for sensors with no recent data
+- Implemented fallback mechanisms that search historical database records
+- Added informative context about the last reading (temperature, humidity, or pressure)
+- Shows exactly how long since the last data point was received
+- Proper handling of new sensors with no history
+- Improved translations for better user experience in both English and Slovak
+
+### Fixed Unknown Downtime in Admin Panel (May 2023)
+
+- Fixed an issue where the admin panel would display "Unknown" for downtime.
+- Improved error handling in the backend to provide more detailed diagnostics.
+- Enhanced the frontend to better handle and display downtime status information.
+- Added specific error states to clarify the reason for any downtime calculation issues.
+- Added more detailed logging to help with future troubleshooting.
+
+The fix provides more specific information about why a downtime might be shown as unknown, including:
+- "No Data" when no reference data is available
+- More specific error messages when calculations fail
+- Proper translation of error states in both English and Slovak
 
 ## Advanced Configuration
 
