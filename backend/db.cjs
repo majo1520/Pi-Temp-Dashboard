@@ -867,6 +867,29 @@ const locationColors = {
   }
 };
 
+// Function to better ensure boolean fields are properly stored as INTEGER in SQLite
+function ensureSqliteBoolean(value) {
+  // If it's already a number, ensure it's 0 or 1
+  if (typeof value === 'number') {
+    return value === 0 ? 0 : 1;
+  }
+  // If it's a boolean
+  else if (typeof value === 'boolean') {
+    return value ? 1 : 0;
+  }
+  // If it's a string (e.g., "0", "1", "true", "false")
+  else if (typeof value === 'string') {
+    const lowered = value.toLowerCase();
+    return (lowered === '0' || lowered === 'false' || lowered === '') ? 0 : 1;
+  }
+  // For null/undefined
+  else if (value === null || value === undefined) {
+    return 0;
+  }
+  // For any other type, use truthy/falsy check
+  return value ? 1 : 0;
+}
+
 // User settings management functions
 const userSettings = {
   // Get a specific setting for a user
@@ -878,13 +901,15 @@ const userSettings = {
         (err, row) => {
           if (err) {
             reject(err);
+          } else if (!row) {
+            resolve(null);
           } else {
-            // Return the parsed value if found, or null if not
             try {
-              resolve(row ? JSON.parse(row.setting_value) : null);
+              const value = JSON.parse(row.setting_value);
+              resolve(value);
             } catch (parseError) {
-              logger.error(`Error parsing setting ${key} for user ${userId}:`, parseError);
-              resolve(row ? row.setting_value : null);
+              logger.error(`Error parsing setting ${key}:`, parseError);
+              resolve(row.setting_value);
             }
           }
         }
@@ -959,7 +984,7 @@ const userSettings = {
       );
     });
   },
-
+  
   // Delete all settings for a user
   async deleteAll(userId) {
     return new Promise((resolve, reject) => {
@@ -981,29 +1006,6 @@ const userSettings = {
     });
   }
 };
-
-// Function to better ensure boolean fields are properly stored as INTEGER in SQLite
-function ensureSqliteBoolean(value) {
-  // If it's already a number, ensure it's 0 or 1
-  if (typeof value === 'number') {
-    return value === 0 ? 0 : 1;
-  }
-  // If it's a boolean
-  else if (typeof value === 'boolean') {
-    return value ? 1 : 0;
-  }
-  // If it's a string (e.g., "0", "1", "true", "false")
-  else if (typeof value === 'string') {
-    const lowered = value.toLowerCase();
-    return (lowered === '0' || lowered === 'false' || lowered === '') ? 0 : 1;
-  }
-  // For null/undefined
-  else if (value === null || value === undefined) {
-    return 0;
-  }
-  // For any other type, use truthy/falsy check
-  return value ? 1 : 0;
-}
 
 // Notification settings management functions
 const notificationSettings = {
@@ -1308,6 +1310,165 @@ const resetUserPassword = (userId, newPassword) => {
   });
 };
 
+// Create a memory-based fallback for user settings if the database connection fails
+const inMemoryUserSettings = {
+  // Store settings in memory as a fallback
+  _store: new Map(),
+  
+  // Generate a key for the in-memory store
+  _getKey(userId, key) {
+    return `${userId}:${key}`;
+  },
+  
+  async getAll(userId) {
+    // Log that we're using the fallback
+    logger.log(`Using in-memory fallback for user settings (getAll) for user ${userId}`);
+    
+    const settings = {};
+    for (const [k, v] of this._store.entries()) {
+      if (k.startsWith(`${userId}:`)) {
+        const key = k.split(':')[1];
+        settings[key] = v;
+      }
+    }
+    return settings;
+  },
+  
+  async get(userId, key) {
+    // Log that we're using the fallback
+    logger.log(`Using in-memory fallback for user settings (get) for user ${userId}, key ${key}`);
+    
+    return this._store.get(this._getKey(userId, key)) || null;
+  },
+  
+  async set(userId, key, value) {
+    // Log that we're using the fallback
+    logger.log(`Using in-memory fallback for user settings (set) for user ${userId}, key ${key}`);
+    
+    this._store.set(this._getKey(userId, key), value);
+    return true;
+  },
+  
+  async delete(userId, key) {
+    // Log that we're using the fallback
+    logger.log(`Using in-memory fallback for user settings (delete) for user ${userId}, key ${key}`);
+    
+    return this._store.delete(this._getKey(userId, key));
+  }
+};
+
+// Create a fallback wrapper for userSettings
+const userSettingsFallback = {
+  getAll: async (userId) => {
+    try {
+      // Try to use the database version first
+      if (userSettings && typeof userSettings.getAll === 'function') {
+        return await userSettings.getAll(userId);
+      }
+    } catch (err) {
+      logger.error('Error in userSettings.getAll, using fallback:', err);
+    }
+    
+    // Fall back to in-memory version
+    return inMemoryUserSettings.getAll(userId);
+  },
+  
+  get: async (userId, key) => {
+    try {
+      // Try to use the database version first
+      if (userSettings && typeof userSettings.get === 'function') {
+        return await userSettings.get(userId, key);
+      }
+    } catch (err) {
+      logger.error(`Error in userSettings.get for key ${key}, using fallback:`, err);
+    }
+    
+    // Fall back to in-memory version
+    return inMemoryUserSettings.get(userId, key);
+  },
+  
+  set: async (userId, key, value) => {
+    try {
+      // Try to use the database version first
+      if (userSettings && typeof userSettings.set === 'function') {
+        return await userSettings.set(userId, key, value);
+      }
+    } catch (err) {
+      logger.error(`Error in userSettings.set for key ${key}, using fallback:`, err);
+    }
+    
+    // Fall back to in-memory version
+    return inMemoryUserSettings.set(userId, key, value);
+  },
+  
+  delete: async (userId, key) => {
+    try {
+      // Try to use the database version first
+      if (userSettings && typeof userSettings.delete === 'function') {
+        return await userSettings.delete(userId, key);
+      }
+    } catch (err) {
+      logger.error(`Error in userSettings.delete for key ${key}, using fallback:`, err);
+    }
+    
+    // Fall back to in-memory version
+    return inMemoryUserSettings.delete(userId, key);
+  }
+};
+
+// Create a memory-based fallback for location colors
+const inMemoryColors = {
+  // Default colors
+  _colors: {
+    'IT OFFICE': '#3498db',
+    'MARKETING': '#9b59b6',
+    'IT SERVER ROOM': '#f39c12',
+    'default': '#cccccc'
+  },
+  
+  async getAll() {
+    logger.log('Using in-memory fallback for location colors (getAll)');
+    return { ...this._colors };
+  },
+  
+  async update(newColors) {
+    logger.log('Using in-memory fallback for location colors (update)');
+    this._colors = { ...this._colors, ...newColors };
+    return { success: true, message: 'Location colors updated in memory' };
+  }
+};
+
+// Create a fallback wrapper for location colors
+const locationColorsFallback = {
+  getAll: async () => {
+    try {
+      // Try to use the database version first
+      if (locationColors && typeof locationColors.getAll === 'function') {
+        return await locationColors.getAll();
+      }
+    } catch (err) {
+      logger.error('Error in locationColors.getAll, using fallback:', err);
+    }
+    
+    // Fall back to in-memory version
+    return inMemoryColors.getAll();
+  },
+  
+  update: async (newColors) => {
+    try {
+      // Try to use the database version first
+      if (locationColors && typeof locationColors.update === 'function') {
+        return await locationColors.update(newColors);
+      }
+    } catch (err) {
+      logger.error('Error in locationColors.update, using fallback:', err);
+    }
+    
+    // Fall back to in-memory version
+    return inMemoryColors.update(newColors);
+  }
+};
+
 // Export database functions
 module.exports = {
   db,
@@ -1330,7 +1491,7 @@ module.exports = {
     });
   },
   users,
-  settings: userSettings,
-  colors: locationColors,
+  userSettings: userSettingsFallback,
+  locationColors: locationColorsFallback,
   notificationSettings
 }; 

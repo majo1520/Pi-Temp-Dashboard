@@ -1,4 +1,4 @@
-// cache.cjs - Redis caching module
+// cache.cjs - Enhanced Redis caching module
 const dotenv = require('dotenv');
 dotenv.config();
 
@@ -8,6 +8,7 @@ const DEFAULT_CACHE_TTL = 60 * 5; // 5 minutes
 // Use in-memory caching if Redis is not available
 let isRedisAvailable = false;
 const memoryCache = new Map();
+const memoryCacheMeta = new Map(); // Store metadata about cached items
 
 // Check if Redis is being used
 const CACHE_ENABLED = process.env.CACHE_ENABLED === 'true';
@@ -83,19 +84,33 @@ async function get(key) {
   }
 }
 
-// Cache set function with TTL
+// Cache set function with TTL and metadata
 async function set(key, value, ttl = DEFAULT_CACHE_TTL) {
   if (!CACHE_ENABLED) return;
   
   try {
+    // Store metadata about this cache entry
+    const metadata = {
+      key,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
+      ttl
+    };
+    
     if (isRedisAvailable && redisClient) {
+      // For Redis, we store the value with expiration
       await redisClient.set(key, JSON.stringify(value), { EX: ttl });
+      
+      // Also store metadata in a separate key
+      await redisClient.set(`meta:${key}`, JSON.stringify(metadata), { EX: ttl });
     } else {
       memoryCache.set(key, value);
+      memoryCacheMeta.set(key, metadata);
       
       // Set expiry for memory cache
       setTimeout(() => {
         memoryCache.delete(key);
+        memoryCacheMeta.delete(key);
       }, ttl * 1000);
     }
   } catch (error) {
@@ -110,11 +125,144 @@ async function del(key) {
   try {
     if (isRedisAvailable && redisClient) {
       await redisClient.del(key);
+      await redisClient.del(`meta:${key}`);
     } else {
       memoryCache.delete(key);
+      memoryCacheMeta.delete(key);
     }
   } catch (error) {
     console.error(`Error deleting cache for key ${key}:`, error.message);
+  }
+}
+
+// Delete cache entries by pattern (e.g., "history_*")
+async function delByPattern(pattern) {
+  if (!CACHE_ENABLED) return;
+  
+  try {
+    if (isRedisAvailable && redisClient) {
+      // For Redis, we can use the SCAN command to find keys matching a pattern
+      let cursor = 0;
+      do {
+        const { cursor: nextCursor, keys } = await redisClient.scan(cursor, {
+          MATCH: pattern,
+          COUNT: 100
+        });
+        
+        cursor = nextCursor;
+        
+        if (keys.length > 0) {
+          console.log(`Deleting ${keys.length} keys matching pattern: ${pattern}`);
+          // Delete keys in batches to avoid blocking Redis
+          await redisClient.del(keys);
+          
+          // Also delete metadata
+          const metaKeys = keys.map(key => `meta:${key}`);
+          await redisClient.del(metaKeys);
+        }
+      } while (cursor !== 0);
+    } else {
+      // For memory cache, we iterate through all keys and check the pattern
+      for (const key of memoryCache.keys()) {
+        if (key.includes(pattern) || new RegExp(pattern.replace('*', '.*')).test(key)) {
+          memoryCache.delete(key);
+          memoryCacheMeta.delete(key);
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`Error deleting cache by pattern ${pattern}:`, error.message);
+  }
+}
+
+// Get metadata about a cached item
+async function getMeta(key) {
+  if (!CACHE_ENABLED) return null;
+  
+  try {
+    if (isRedisAvailable && redisClient) {
+      const meta = await redisClient.get(`meta:${key}`);
+      return meta ? JSON.parse(meta) : null;
+    } else {
+      return memoryCacheMeta.get(key) || null;
+    }
+  } catch (error) {
+    console.error(`Error getting cache metadata for key ${key}:`, error.message);
+    return null;
+  }
+}
+
+// Get all cache keys matching a pattern
+async function getKeys(pattern = '*') {
+  if (!CACHE_ENABLED) return [];
+  
+  try {
+    if (isRedisAvailable && redisClient) {
+      // For Redis, we use SCAN to avoid blocking with KEYS command
+      const keys = [];
+      let cursor = 0;
+      
+      do {
+        const result = await redisClient.scan(cursor, {
+          MATCH: pattern,
+          COUNT: 100
+        });
+        
+        cursor = result.cursor;
+        keys.push(...result.keys);
+      } while (cursor !== 0);
+      
+      return keys;
+    } else {
+      // For memory cache, filter keys by pattern
+      return Array.from(memoryCache.keys()).filter(key => 
+        key.includes(pattern) || new RegExp(pattern.replace('*', '.*')).test(key)
+      );
+    }
+  } catch (error) {
+    console.error(`Error getting cache keys with pattern ${pattern}:`, error.message);
+    return [];
+  }
+}
+
+// Get cache stats
+async function getStats() {
+  if (!CACHE_ENABLED) return { enabled: false };
+  
+  try {
+    if (isRedisAvailable && redisClient) {
+      // For Redis, get info about the server
+      const info = await redisClient.info();
+      const memory = await redisClient.info('memory');
+      const dbSize = await redisClient.dbSize();
+      
+      return {
+        enabled: true,
+        type: 'redis',
+        keyCount: dbSize,
+        memoryUsed: memory.split('\r\n')
+          .find(line => line.startsWith('used_memory_human:'))
+          ?.split(':')[1]?.trim() || 'unknown',
+        serverInfo: {
+          version: info.split('\r\n').find(line => line.startsWith('redis_version:'))?.split(':')[1]?.trim(),
+          uptime: info.split('\r\n').find(line => line.startsWith('uptime_in_seconds:'))?.split(':')[1]?.trim()
+        }
+      };
+    } else {
+      // For memory cache, just return the size
+      return {
+        enabled: true,
+        type: 'memory',
+        keyCount: memoryCache.size,
+        memoryUsed: 'N/A'
+      };
+    }
+  } catch (error) {
+    console.error('Error getting cache stats:', error.message);
+    return {
+      enabled: CACHE_ENABLED,
+      error: error.message
+    };
   }
 }
 
@@ -127,6 +275,7 @@ async function flushAll() {
       await redisClient.flushAll();
     } else {
       memoryCache.clear();
+      memoryCacheMeta.clear();
     }
     console.log('Cache cleared');
   } catch (error) {
@@ -146,6 +295,10 @@ module.exports = {
   get,
   set,
   del,
+  delByPattern,
+  getMeta,
+  getKeys,
+  getStats,
   flushAll,
   close
 }; 

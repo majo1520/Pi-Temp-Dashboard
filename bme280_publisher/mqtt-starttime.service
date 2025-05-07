@@ -1,0 +1,21 @@
+[Unit]
+Description=MQTT StartTime Publisher
+After=network.target mosquitto.service
+Wants=mosquitto.service
+
+[Service]
+Type=oneshot
+User=admin
+WorkingDirectory=/home/admin/dashboard_refaktor/bme280_publisher
+ExecStart=/usr/bin/python3 /home/admin/dashboard_refaktor/bme280_publisher/direct_mqtt_write.py
+StandardOutput=file:/home/admin/dashboard_refaktor/mqtt_output.log
+StandardError=file:/home/admin/dashboard_refaktor/mqtt_error.log
+
+# InfluxDB connection settings
+Environment="INFLUX_URL=http://localhost:8086"
+Environment="INFLUX_TOKEN=SD36SrCrVMYTYQHZk2NAN3E_KDKXV1jKC1CrvisbYcNDZFeBQNSF4Geb733bg_omWmrMYIbfiKGKLpdZOhHU3w=="
+Environment="ORG=europlac"
+Environment="BUCKET=sensor_data"
+
+[Install]
+WantedBy=multi-user.target 

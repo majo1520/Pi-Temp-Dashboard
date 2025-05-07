@@ -3,6 +3,7 @@
  */
 
 import config from '../config';
+import axios from 'axios';
 // Define API_BASE_URL as a relative path to ensure it works with the proxy
 const API_BASE_URL = config.API_URL;
 
@@ -21,37 +22,84 @@ export async function getSensors() {
 }
 
 /**
- * Get sensor history data
+ * Get sensor history data with improved performance and error handling
  * @param {string} sensorName - Sensor location name
  * @param {string} range - Time range (e.g. "24h", "7d")
+ * @param {Object} options - Additional options
+ * @param {boolean} options.debug - Enable debug output
+ * @param {boolean} options.enhanceOffline - Include synthetic offline points
  * @returns {Promise<Array>} - Array of sensor data points
  */
-export async function getSensorHistory(sensorName, range = "24h") {
-  // Validate the range format - must be in the format of [number][unit]
-  // where unit is one of: h, d, w, mo, y
-  const validRange = range.match(/^\d+[hdwmy]$/) ? range : "24h";
+export async function getSensorHistory(sensorName, range = "24h", options = {}) {
+  const { debug = false, enhanceOffline = true } = options;
   
-  // Map any non-standard formats to valid InfluxDB duration formats
-  let normalizedRange = validRange;
-  if (validRange.endsWith('w')) {
-    // Convert weeks to days (e.g., 1w -> 7d)
-    const weeks = parseInt(validRange);
-    normalizedRange = `${weeks * 7}d`;
-  } else if (validRange.endsWith('mo')) {
-    // Convert months to days (approximate)
-    const months = parseInt(validRange);
-    normalizedRange = `${months * 30}d`;
-  } else if (validRange.endsWith('y')) {
-    // Convert years to days
-    const years = parseInt(validRange);
-    normalizedRange = `${years * 365}d`;
+  if (debug) {
+    console.log(`Fetching history for ${sensorName} with range ${range}`);
   }
   
-  const response = await fetch(`${API_BASE_URL}/sensors/${sensorName}/history?range=${normalizedRange}`);
-  if (!response.ok) {
-    throw new Error('Failed to fetch sensor history');
+  try {
+    // Build URL with parameters
+    let url = `${API_BASE_URL}/sensors/${sensorName}/history?range=${range}`;
+    
+    // Add optional parameters
+    if (debug) {
+      url += '&debug=true';
+    }
+    
+    if (enhanceOffline === false) {
+      url += '&enhanceOffline=false';
+    }
+    
+    // Create an AbortController for timeout handling
+    const controller = new AbortController();
+    // Use a reasonably long timeout for large data requests
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds
+    
+    // Use more detailed error tracking to help troubleshooting
+    const fetchStartTime = Date.now();
+    
+    try {
+      const response = await fetch(url, { 
+        signal: controller.signal,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // Check for HTTP errors
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error ${response.status}: ${errorText}`);
+      }
+      
+      // Parse response
+      const data = await response.json();
+      
+      // Log request performance if debug enabled
+      if (debug) {
+        const fetchTime = Date.now() - fetchStartTime;
+        console.log(`History fetch completed in ${fetchTime}ms, received ${Array.isArray(data) ? data.length : 'object'} response`);
+      }
+      
+      return data;
+    } catch (fetchErr) {
+      // Clear timeout if fetch fails
+      clearTimeout(timeoutId);
+      
+      // Handle abort errors specifically
+      if (fetchErr.name === 'AbortError') {
+        throw new Error(`Request timeout after ${Math.round((Date.now() - fetchStartTime)/1000)}s when fetching data for ${sensorName}`);
+      }
+      
+      // Re-throw other errors
+      throw fetchErr;
+    }
+  } catch (err) {
+    console.error(`Error fetching history for ${sensorName}:`, err);
+    throw err;
   }
-  return response.json();
 }
 
 /**
@@ -282,15 +330,117 @@ export async function updateSensorVisibility(sensorName, visibility) {
 }
 
 /**
- * Get sensor status information
+ * Get status of all sensors
+ * @param {Object} options - Configuration options
+ * @param {boolean} options.showLastReadings - Whether to include last readings info in results
  * @returns {Promise<Array>} - Array of sensor status objects
  */
-export async function getSensorStatuses() {
-  const response = await fetch(`${API_BASE_URL}/sensors/status`);
-  if (!response.ok) {
-    throw new Error('Failed to fetch sensor statuses');
+export async function getSensorStatuses(options = {}) {
+  // Set default options
+  const { showLastReadings = true } = options;
+  
+  // Add cache busting to avoid getting stale data
+  const cacheBuster = `_t=${Date.now()}`;
+  let retries = 0;
+  const maxRetries = 2;
+  
+  const attemptFetch = async () => {
+    try {
+      console.log('[API] Fetching sensor statuses...');
+      const controller = new AbortController();
+      
+      // Build URL with parameters
+      let url = `${API_BASE_URL}/sensors/status?${cacheBuster}`;
+      
+      // Add lastReadings parameter if explicitly set to false
+      if (showLastReadings === false) {
+        url += `&lastReadings=false`;
+        console.log('[API] Disabling last readings in status request');
+      }
+      
+      console.log(`[API] Request URL: ${url}`);
+      
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      });
+      
+      if (!response.ok) {
+        console.error(`[API] Error fetching sensor statuses: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to fetch sensor statuses: ${response.status} ${response.statusText}`);
+      }
+      
+      const text = await response.text();
+      console.log(`[API] Raw response: ${text.substring(0, 200)}...`);
+      
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error(`[API] JSON parse error:`, e);
+        console.error(`[API] Raw text:`, text);
+        throw new Error('Failed to parse sensor status response');
+      }
+      
+      console.log(`[API] Received ${data.length} sensor statuses`);
+      
+      // Validate response
+      const hasUptime = data.some(item => item?.uptimeDuration || item?.offlineDuration);
+      console.log(`[API] Response has uptime/downtime info: ${hasUptime}`);
+      
+      // Validate and fix lastSeen timestamps if needed
+      const validatedData = data.map(status => {
+        if (!status) return null;
+        
+        // Create a new object with all the fields
+        const validatedStatus = { ...status };
+        
+        // Ensure we have a valid lastSeen timestamp
+        if (status.lastSeen) {
+          try {
+            const parsedDate = new Date(status.lastSeen);
+            // If date is invalid or in the future (by more than 1 minute), fix it
+            if (isNaN(parsedDate) || parsedDate > new Date(Date.now() + 60000)) {
+              console.warn(`[API] Invalid lastSeen timestamp for sensor ${status.name}: ${status.lastSeen}`);
+              validatedStatus.lastSeen = null;
+            }
+          } catch (e) {
+            console.error(`[API] Error parsing lastSeen for ${status.name}:`, e);
+            validatedStatus.lastSeen = null;
+          }
+        }
+        
+        return validatedStatus;
+      }).filter(status => status !== null);
+      
+      return validatedData;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.error('[API] Request for sensor statuses timed out');
+        throw new Error('Request timed out. Please try again.');
+      }
+      
+      console.error('[API] Error in getSensorStatuses:', error);
+      throw error;
+    }
+  };
+  
+  // Try with retries on failure
+  while (retries <= maxRetries) {
+    try {
+      return await attemptFetch();
+    } catch (error) {
+      retries++;
+      if (retries > maxRetries) {
+        throw error;
+      }
+      console.log(`Retrying getSensorStatuses (attempt ${retries} of ${maxRetries})...`);
+      // Wait before retry (exponential backoff)
+      await new Promise(resolve => setTimeout(resolve, retries * 1000));
+    }
   }
-  return response.json();
 }
 
 /**
@@ -858,3 +1008,172 @@ export async function sendOfflineNotification(data) {
   
   return response.json();
 }
+
+/**
+ * Get system information for health monitoring
+ * @returns {Promise} Promise with system information data
+ */
+export const getSystemInfo = async () => {
+  try {
+    const response = await axios.get('/api/admin/monitoring/system', {
+      withCredentials: true // Include authentication cookies
+    });
+    return response.data;
+  } catch (error) {
+    handleApiError(error);
+    throw error;
+  }
+};
+
+/**
+ * Get system health status
+ * @returns {Promise} Promise with health check data
+ */
+export const getHealthStatus = async () => {
+  try {
+    const response = await axios.get('/api/admin/monitoring/health', {
+      withCredentials: true // Include authentication cookies
+    });
+    return response.data;
+  } catch (error) {
+    handleApiError(error);
+    throw error;
+  }
+};
+
+/**
+ * Get queue statistics
+ * @returns {Promise} Promise with queue statistics data
+ */
+export const getQueueStats = async () => {
+  try {
+    const response = await axios.get('/api/admin/monitoring/queues', {
+      withCredentials: true // Include authentication cookies
+    });
+    return response.data;
+  } catch (error) {
+    console.warn('Queue stats not available:', error.message);
+    return null;
+  }
+};
+
+/**
+ * Get cache statistics
+ * @returns {Promise} Promise with cache statistics data
+ */
+export const getCacheStats = async () => {
+  try {
+    const response = await axios.get('/api/admin/monitoring/cache', {
+      withCredentials: true // Include authentication cookies
+    });
+    return response.data;
+  } catch (error) {
+    console.warn('Cache stats not available:', error.message);
+    return null;
+  }
+};
+
+/**
+ * Delete a sensor
+ * @param {string} sensorName - Name of the sensor to delete
+ * @returns {Promise} Promise with deletion confirmation
+ */
+export const deleteSensor = async (sensorName) => {
+  try {
+    const response = await axios.delete(`/api/sensors/${encodeURIComponent(sensorName)}`);
+    return response.data;
+  } catch (error) {
+    handleApiError(error);
+    throw error;
+  }
+};
+
+/**
+ * Get network statistics
+ * @returns {Promise} Promise with network statistics data
+ */
+export const getNetworkStats = async () => {
+  try {
+    const response = await axios.get('/api/admin/monitoring/network', {
+      withCredentials: true // Include authentication cookies
+    });
+    return response.data;
+  } catch (error) {
+    console.warn('Network stats not available:', error.message);
+    return null;
+  }
+};
+
+/**
+ * Get disk health information including SMART data and partitions
+ * @returns {Promise} Promise with disk health and usage data
+ */
+export const getDiskHealth = async () => {
+  try {
+    // First try dedicated endpoint
+    try {
+      const response = await axios.get('/api/admin/monitoring/disk', {
+        withCredentials: true // Include authentication cookies
+      });
+      return response.data;
+    } catch (endpointError) {
+      // If endpoint doesn't exist, extract disk data from system info
+      console.log('Dedicated disk endpoint not available, using system info...', endpointError);
+      const systemInfoResponse = await axios.get('/api/admin/monitoring/system', {
+        withCredentials: true // Include authentication cookies
+      });
+      
+      if (systemInfoResponse.data && systemInfoResponse.data.disk) {
+        // Return just the disk portion of the system info
+        return systemInfoResponse.data.disk;
+      }
+      throw new Error('No disk information available in system info');
+    }
+  } catch (error) {
+    console.warn('Disk health data not available:', error.message);
+    // Return a minimal structure instead of null to avoid UI breakage
+    return {
+      health: 'warning',
+      message: 'Disk health information currently unavailable',
+      disks: []
+    };
+  }
+};
+
+/**
+ * Get memory health information with detailed allocation and swap usage
+ * @returns {Promise} Promise with memory health and allocation data
+ */
+export const getMemoryHealth = async () => {
+  try {
+    // First try dedicated endpoint
+    try {
+      const response = await axios.get('/api/admin/monitoring/memory', {
+        withCredentials: true // Include authentication cookies
+      });
+      return response.data;
+    } catch (endpointError) {
+      // If endpoint doesn't exist, extract memory data from system info
+      console.log('Dedicated memory endpoint not available, using system info...', endpointError);
+      const systemInfoResponse = await axios.get('/api/admin/monitoring/system', {
+        withCredentials: true // Include authentication cookies
+      });
+      
+      if (systemInfoResponse.data && systemInfoResponse.data.memory) {
+        // Return just the memory portion of the system info
+        return systemInfoResponse.data.memory;
+      }
+      throw new Error('No memory information available in system info');
+    }
+  } catch (error) {
+    console.warn('Memory health data not available:', error.message);
+    // Return a minimal structure instead of null to avoid UI breakage
+    return {
+      health: 'warning',
+      message: 'Memory health information currently unavailable',
+      swap: { total: 0, used: 0 },
+      cached: 0,
+      available: 0
+    };
+  }
+};

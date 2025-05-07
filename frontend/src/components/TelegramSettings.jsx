@@ -12,7 +12,7 @@ import * as api from '../services/api';
  * - Toggling inclusion of charts in notifications
  * - Setting thresholds for temperature, humidity, and pressure
  */
-const TelegramSettings = ({ t }) => {
+const TelegramSettings = ({ t, onClose }) => {
   const [telegramSettings, setTelegramSettings] = useState({
     enabled: false,
     chatId: '',
@@ -226,11 +226,22 @@ const TelegramSettings = ({ t }) => {
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 shadow-md rounded-lg p-6">
-      <h2 className="text-xl font-semibold mb-6 text-gray-800 dark:text-white">
-        {t ? t('telegramAlertSettings') : 'Telegram Alert Settings'}
-      </h2>
+    <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden">
+      <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">{t('telegramAlerts') || 'Telegram Alerts'}</h2>
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
+          title={t('close') || 'Close'}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
       
+      <div className="p-6">
       {error && (
         <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-200 rounded">
           {error}
@@ -705,6 +716,7 @@ const TelegramSettings = ({ t }) => {
             {t ? t('howToCreateBot') : 'How to create a Telegram bot'}
           </a>
         </p>
+        </div>
       </div>
     </div>
   );

@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node server.cjs",
     "dev": "node server.cjs",
-    "production": "NODE_ENV=production node server.cjs"
+    "production": "NODE_ENV=production node server.cjs",
+    "cluster": "node start-cluster.js",
+    "production:cluster": "NODE_ENV=production node start-cluster.js",
+    "queue-ui": "npx bull-board -q sensor-data-processing,sensor-alerts,data-aggregation -r redis://localhost:6379"
   },
   "dependencies": {
     "archiver": "^5.3.1",
@@ -31,10 +34,27 @@
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^2.7.0",
     "node-telegram-bot-api": "^0.64.0",
+    "prom-client": "^14.2.0",
     "redis": "^4.6.7",
     "sharp": "^0.34.1",
     "sqlite3": "^5.1.6",
     "telegraf": "^4.15.3",
-    "xss": "^1.0.14"
+    "xss": "^1.0.14",
+    "@opentelemetry/api": "^1.6.0",
+    "@opentelemetry/sdk-node": "^0.45.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.39.4",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.45.0",
+    "@opentelemetry/instrumentation-express": "^0.34.0",
+    "@opentelemetry/instrumentation-http": "^0.45.0",
+    "@opentelemetry/instrumentation-redis": "^0.36.0",
+    "@opentelemetry/resources": "^1.17.1",
+    "@opentelemetry/semantic-conventions": "^1.17.1"
+  },
+  "optionalDependencies": {
+    "apollo-server-express": "^3.12.1",
+    "graphql": "^16.8.1",
+    "swagger-jsdoc": "^6.2.8", 
+    "swagger-ui-express": "^4.6.3",
+    "@bull-board/express": "^5.8.4"
   }
 }

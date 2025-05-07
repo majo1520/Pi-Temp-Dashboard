@@ -11,6 +11,8 @@ const importRoutes = require('./import');
 const colorsRoutes = require('./colors');
 const usersRoutes = require('./users');
 const telegramRoutes = require('./telegram');
+const queueRoutes = require('./queues');
+const monitoringRoutes = require('./admin/monitoring');
 
 // Register route modules
 router.use('/', authRoutes); // auth routes don't have a prefix
@@ -22,6 +24,8 @@ router.use('/location-colors', colorsRoutes);
 router.use('/users', usersRoutes);
 router.use('/notifications/telegram', telegramRoutes);
 router.use('/telegram', telegramRoutes); // For backward compatibility
+router.use('/queues', queueRoutes); // Queue management routes
+router.use('/admin/monitoring', monitoringRoutes); // System monitoring routes
 
 // Catch-all route for unmatched API endpoints
 router.use((req, res) => {

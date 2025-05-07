@@ -6,13 +6,19 @@ Wants=mosquitto.service
 [Service]
 Type=simple
 User=admin
-WorkingDirectory=/home/admin/dashboard_refaktor
-ExecStart=/usr/bin/python3 /home/admin/dashboard_refaktor/bme280_publisher.py
+WorkingDirectory=/home/admin/dashboard_refaktor/bme280_publisher
+ExecStart=/usr/bin/python3 /home/admin/dashboard_refaktor/bme280_publisher/bme280_publisher.py
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=bme280-sensor
+
+# InfluxDB connection settings
+Environment="INFLUX_URL=http://localhost:8086"
+Environment="INFLUX_TOKEN=SD36SrCrVMYTYQHZk2NAN3E_KDKXV1jKC1CrvisbYcNDZFeBQNSF4Geb733bg_omWmrMYIbfiKGKLpdZOhHU3w=="
+Environment="ORG=europlac"
+Environment="BUCKET=sensor_data"
 
 # Security hardening
 ProtectSystem=full

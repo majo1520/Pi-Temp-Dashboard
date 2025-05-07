@@ -1,151 +1,180 @@
-# Dashboard Backend API
+# Dashboard Backend with Load Balancing and Message Queue
 
-This is the backend API server for the Dashboard application. It provides an API interface between the frontend and InfluxDB.
+This is the enhanced backend for the BME280 IoT Dashboard application, now with load balancing and message queue capabilities for handling high volume sensor data.
 
 ## Features
 
-- Secure API endpoints for accessing InfluxDB data
-- Authentication and session management
-- CORS protection for security
-- Rate limiting to prevent abuse
-- Input validation and sanitization
+- **Load Balancing**: Utilizes Node.js cluster module to distribute load across all available CPU cores
+- **Message Queue**: Implements Bull queue system for reliable processing of high-volume sensor data
+- **MQTT Support**: Handles sensor data via MQTT protocol
+- **GraphQL API**: Optional GraphQL API alongside REST
+- **Queue Management**: API endpoints for monitoring and managing queues
+- **Graceful Fallbacks**: System works even when Redis or optional dependencies are unavailable
 
-## Configuration
+## Requirements
 
-Configuration is done through environment variables, which are typically set in the `.env` file in the root of the project. The backend will also read from `.env.production` for production environments.
+- Node.js 14+
+- Redis (optional, but recommended for message queue and caching)
+- MQTT Broker (optional, for MQTT support)
 
-### Key Environment Variables
+## Getting Started
 
-```
-# InfluxDB Configuration
-INFLUX_URL=http://localhost:8086
-INFLUX_TOKEN=your_token
-ORG=your_org
-BUCKET=sensor_data
-
-# Authentication 
-ADMIN_PASSWORD_HASH=bcrypt_hash_of_password
-SESSION_SECRET=secure_random_string
-
-# Server Configuration
-PORT=5000
-```
-
-## API Endpoints
-
-### Authentication
-
-- `POST /api/login` - Log in with password
-- `POST /api/logout` - Log out
-- `GET /api/session` - Get current session info
-
-### Sensors
-
-- `GET /api/sensors` - Get list of all sensors
-- `GET /api/sensors/status` - Get status of all sensors
-- `GET /api/sensors/:name/history` - Get historical data for a specific sensor
-- `POST /api/sensors/:name/visibility` - Update visibility settings for a sensor
-
-### Data Management
-
-- `POST /api/add-location` - Add a new sensor location
-- `POST /api/delete-location` - Delete a sensor location
-- `POST /api/import-lp` - Import data in Line Protocol format
-- `GET /api/export` - Export data in various formats
-
-## Running the Backend Independently
-
-To run the backend server independently:
-
-```bash
-cd dashboard_refaktor
-node backend/server.js
-```
-
-Or using the provided script:
-
-```bash
-./start-split.sh backend
-```
-
-## Production Deployment
-
-For production environments, it's recommended to:
-
-1. Use a process manager like PM2:
+1. Install dependencies:
    ```
-   pm2 start backend/server.js --name dashboard-backend
+   npm install
    ```
 
-2. Set up a reverse proxy with Nginx:
-   ```nginx
-   location /api/ {
-     proxy_pass http://localhost:5000/api/;
-     proxy_http_version 1.1;
-     proxy_set_header Upgrade $http_upgrade;
-     proxy_set_header Connection 'upgrade';
-     proxy_set_header Host $host;
-     proxy_cache_bypass $http_upgrade;
-   }
+2. Set up environment variables by creating a `.env` file (see `env.example`):
+   ```
+   PORT=5000
+   INFLUX_URL=http://localhost:8086
+   INFLUX_TOKEN=your_influx_token
+   ORG=your_org
+   BUCKET=your_bucket
+   SESSION_SECRET=your_session_secret
+   CACHE_ENABLED=true
+   REDIS_URL=redis://localhost:6379
+   MQTT_ENABLED=true
+   MQTT_BROKER=mqtt://localhost:1883
+   CLUSTER_MODE=false
    ```
 
-3. Ensure HTTPS is enabled for secure communication
+3. Start the server:
+   ```
+   npm start
+   ```
 
-4. Set appropriate CORS headers for your production domain
+## Running in Cluster Mode
 
-## Security Considerations
-
-- Always change the default admin password
-- Use strong, randomly generated session secrets
-- In production, enable HTTPS
-- Regularly update dependencies to patch security vulnerabilities
-
-## Configurable Logging
-
-The backend server now includes configurable logging that can be turned on or off via the `.env.production` file.
-
-### Logging Configuration
-
-In the `.env.production` file, set the `LOGGING_LEVEL` variable to one of these values:
-
-- `ALL`: Show all logs (informational messages and errors)
-- `ERROR`: Show only error messages
-- `NONE`: Disable all logging except critical system messages
-
-Example:
-```
-# Logging configuration - options: ALL, ERROR, NONE
-LOGGING_LEVEL=ERROR
-```
-
-### How It Works
-
-The logging system uses a custom logger utility that respects the configured log level:
-
-- `logger.log()` - Used for informational messages (only shown when LOGGING_LEVEL=ALL)
-- `logger.error()` - Used for error messages (shown when LOGGING_LEVEL=ALL or ERROR)
-- `logger.always()` - Used for critical system messages (always shown regardless of LOGGING_LEVEL)
-
-### Updating All Log Calls
-
-If you need to update all console.log calls to use the new logger, run:
+To utilize all available CPU cores for better performance:
 
 ```
-node update-logs.js
-```
-
-This script will automatically replace all console.log and console.error calls in server.cjs with the appropriate logger calls.
-
-## Development
-
-To start the server in development mode:
-
-```
-npm run dev
+npm run cluster
 ```
 
 For production:
 
 ```
-npm start
+npm run production:cluster
+```
+
+## Message Queue System
+
+The message queue system provides:
+
+1. **Reliable Processing**: Ensures sensor data is processed reliably, even during high load
+2. **Automatic Retries**: Failed jobs are automatically retried
+3. **Monitoring**: Queue statistics and management via API
+
+### Redis Requirements
+
+The message queue system uses Redis as its backend. You have three options:
+
+1. **Install Redis** (recommended for production):
+   ```
+   # Ubuntu/Debian
+   sudo apt-get install redis-server
+   sudo systemctl start redis
+   
+   # Check if it's running
+   redis-cli ping
+   ```
+
+2. **Use in-memory fallback**: If Redis is unavailable, the system will log errors but continue 
+   operating with reduced functionality. This is suitable for development but not recommended
+   for production due to data loss risk on server restart.
+
+3. **Disable queue features**: Set `CACHE_ENABLED=false` in your .env file to completely 
+   disable the queue system and prevent connection errors.
+
+### Queue Management API
+
+- `GET /api/queues/stats` - Get statistics for all queues
+- `POST /api/queues/clear/:queueName` - Clear a specific queue
+- `POST /api/queues/pause/:queueName` - Pause a specific queue
+- `POST /api/queues/resume/:queueName` - Resume a specific queue
+
+### Queue UI Dashboard
+
+To monitor queues visually:
+
+```
+npm run queue-ui
+```
+
+This starts a Bull Board UI on http://localhost:3000 (default).
+
+## API Documentation
+
+API documentation is available at `/api/docs` when the server is running.
+
+## GraphQL API
+
+If enabled, the GraphQL API is available at `/graphql`.
+
+## MQTT Integration
+
+To integrate with MQTT for sensor data:
+
+1. Make sure MQTT_ENABLED=true in your .env file
+2. Set MQTT_BROKER to your MQTT broker address
+3. Sensor data should be published to the `sensors/#` topic
+
+## Troubleshooting
+
+### Redis Connection Errors
+
+If you see errors like:
+```
+Error in sensor-data queue: Error: connect ECONNREFUSED 127.0.0.1:6379
+```
+
+This means Redis is not running. You can:
+
+1. Install and start Redis (see "Redis Requirements" above)
+2. Set `CACHE_ENABLED=false` in your .env file to disable Redis features
+3. Change `REDIS_URL` in your .env file if Redis is running on a different host/port
+
+### MQTT Connection Issues
+
+If MQTT integration isn't working:
+
+1. Ensure your MQTT broker is running
+2. Check the `MQTT_BROKER` variable in your .env file
+3. Set `MQTT_ENABLED=false` to disable MQTT features if not needed
+
+## Architecture
+
+```
+┌────────────────┐     ┌─────────────┐     ┌─────────────┐
+│                │     │             │     │             │
+│  MQTT Broker   ├────►│  Message    │     │             │
+│                │     │  Queue      ├────►│  InfluxDB   │
+└────────────────┘     │             │     │             │
+                       └──────┬──────┘     │             │
+┌────────────────┐            │            │             │
+│                │            │            │             │
+│  HTTP API      ├────────────┘            │             │
+│                │                         │             │
+└────────────────┘                         └─────────────┘
+```
+
+## Performance Considerations
+
+- **Redis**: Ensure Redis has enough memory allocated (at least 512MB recommended)
+- **Load Balancing**: Cluster mode will spawn processes equal to CPU count, ensure server has enough RAM
+- **Queue Workers**: Each worker process handles the queue independently
+
+## Debugging
+
+To enable detailed logging:
+
+```
+DEBUG=bull:* npm start
+```
+
+For cluster debugging:
+
+```
+DEBUG=bull:*,cluster:* npm run cluster
 ``` 

@@ -1,409 +1,78 @@
 // AdminPanel.jsx
-import React, { useEffect, useState, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from 'react-i18next';
+import { reloadTranslations } from './i18n';
 import Chart from "react-apexcharts";
 import { saveAs } from "file-saver";
+
+// Custom hooks
+import useSensors from "./hooks/useSensors";
+import useSensorStatuses from "./hooks/useSensorStatuses";
+import useLocationOrder from "./hooks/useLocationOrder";
+
+// Components
+import HeaderButton from "./components/admin/HeaderButton";
+import SensorRow from "./components/admin/SensorRow";
 import AdminSidebar from "./components/AdminSidebar";
 import UsersManagement from "./components/UsersManagement";
 import TelegramSettings from "./components/TelegramSettings";
-import * as api from "./services/api";
-import { useTranslation } from 'react-i18next';
-import { reloadTranslations } from './i18n';
+import SystemMonitoring from "./components/admin/SystemMonitoring";
 
-// Simple header action button component
-const HeaderButton = ({ icon, label, onClick, color = "gray", disabled = false }) => (
-  <button
-    onClick={onClick}
-    className={`flex items-center px-3 py-1.5 text-sm rounded transition-colors
-      ${color === "red" 
-        ? "bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50" 
-        : color === "blue"
-        ? "bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
-        : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"}
-    `}
-    title={label}
-    disabled={disabled}
-  >
-    <span className="mr-1.5">{icon}</span>
-    <span>{label}</span>
-  </button>
-);
+// Services
+import * as api from "./services/api";
 
 export default function AdminPanel() {
-  const [sensors, setSensors] = useState([]);
-  const [sensorStatuses, setSensorStatuses] = useState([]);
+  // Use custom hooks
+  const { 
+    sensors, 
+    isRefreshing, 
+    loadSensors, 
+    updateSingleField, 
+    addLocation,
+    refreshData 
+  } = useSensors();
+  
+  // Use hook with disabled last readings
+  const { getSensorStatus } = useSensorStatuses({ showLastReadings: false });
+  
+  const {
+    draggedLocation,
+    dropTarget,
+    getSortedLocations,
+    updateHiddenLocations,
+    moveLocationUp,
+    moveLocationDown,
+    handleDragStart,
+    handleDragEnter,
+    handleDragLeave,
+    handleDragOver,
+    handleDrop
+  } = useLocationOrder(sensors);
+
+  // UI state
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [showUsersManagement, setShowUsersManagement] = useState(false);
   const [showTelegramSettings, setShowTelegramSettings] = useState(false);
+  const [showSystemMonitoring, setShowSystemMonitoring] = useState(false);
+  const [showSensorManagement, setShowSensorManagement] = useState(true);
+  
   const { t, i18n } = useTranslation();
-  
-  // Add state for hidden locations
-  const [hiddenLocations, setHiddenLocations] = useState([]);
-  const [locationOrder, setLocationOrder] = useState([]);
-  const [draggedLocation, setDraggedLocation] = useState(null);
-  const [dropTarget, setDropTarget] = useState(null);
-
   const navigate = useNavigate();
-  
-  // Add loading state
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Force reload translations when the component mounts
   useEffect(() => {
     reloadTranslations();
-  }, []);
-  
-  // Load hidden locations and order on component mount
-  useEffect(() => {
-    const storedHiddenLocations = localStorage.getItem('hiddenLocations');
-    if (storedHiddenLocations) {
-      try {
-        const parsedHiddenLocations = JSON.parse(storedHiddenLocations);
-        console.log("Loading hidden locations from localStorage:", parsedHiddenLocations);
-        setHiddenLocations(parsedHiddenLocations);
-      } catch (e) {
-        console.error("Error parsing hidden locations:", e);
-      }
+    // Force Slovak language if needed
+    if (i18n.language !== 'sk') {
+      i18n.changeLanguage('sk');
     }
-    
-    // Load location order
-    const storedLocationOrder = localStorage.getItem('locationOrder');
-    if (storedLocationOrder) {
-      try {
-        setLocationOrder(JSON.parse(storedLocationOrder));
-      } catch (e) {
-        console.error("Error parsing location order:", e);
-      }
-    }
-  }, []);
-  
-  // Save location order when it changes
-  useEffect(() => {
-    if (locationOrder.length > 0) {
-      localStorage.setItem('locationOrder', JSON.stringify(locationOrder));
-    }
-  }, [locationOrder]);
-
-  // Add effect to initialize location order
-  useEffect(() => {
-    // Initialize location order if needed
-    if (locationOrder.length === 0 && sensors.length > 0) {
-      const allLocations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
-      if (allLocations.length > 0) {
-        setLocationOrder(allLocations);
-      }
-    }
-  }, [sensors, locationOrder]);
-
-  // Add new effect to enforce hidden locations
-  useEffect(() => {
-    // This ensures hidden locations are consistently applied after data is loaded
-    if (sensors.length > 0 && hiddenLocations.length > 0) {
-      console.log("Enforcing hidden locations after sensors changed:", hiddenLocations);
-      
-      // Get unique locations from loaded sensors
-      const uniqueLocations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
-      
-      // Check if any hidden location doesn't exist in current data
-      const validHiddenLocations = hiddenLocations.filter(
-        loc => uniqueLocations.includes(loc)
-      );
-      
-      // Update hidden locations if they've changed (some might no longer exist)
-      if (validHiddenLocations.length !== hiddenLocations.length) {
-        console.log("Cleaning up hidden locations list - removing non-existent locations");
-        setHiddenLocations(validHiddenLocations);
-        localStorage.setItem('hiddenLocations', JSON.stringify(validHiddenLocations));
-      }
-    }
-  }, [sensors, hiddenLocations]);
-
-  // Načítanie zoznamu senzorov
-  const loadSensors = () => {
-    // Add a cache-busting parameter to avoid stale data
-    const cacheBuster = `?_=${Date.now()}`;
-    
-    return api.getSensors()
-      .then(data => {
-        // Log the received sensors
-        console.log("Fetched sensors from API:", data);
-        
-        // Apply sensor data without filtering (we filter in the render)
-        setSensors(data);
-        return data;
-      })
-      .catch(err => {
-        console.error("Chyba pri načítaní senzorov:", err);
-        throw err;
-      });
-  };
-
-  useEffect(() => {
-    loadSensors()
-      .catch(err => console.error("Error loading sensors on mount:", err));
-  }, []);
-
-  // Načítanie statusov
-  const loadStatuses = () => {
-    return api.getSensorStatuses()
-      .then(data => {
-        if (Array.isArray(data)) {
-          setSensorStatuses(data);
-          return data;
-        } else {
-          console.error("Neočakávaný formát statusov:", data);
-          throw new Error("Unexpected status format");
-        }
-      })
-      .catch(err => {
-        console.error("Chyba pri načítaní statusov:", err);
-        throw err;
-      });
-  };
-
-  useEffect(() => {
-    loadStatuses();
-    const interval = setInterval(loadStatuses, 15000); // Check every 15 seconds
-    return () => clearInterval(interval);
-  }, []);
-
-  // Format duration in human-readable format (days, hours, minutes)
-  const formatDuration = (ms) => {
-    if (!ms) return null;
-    
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-    
-    if (days > 0) {
-      return `${days}d ${hours % 24}h ${minutes % 60}m`;
-    } else if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`;
-    } else {
-      return `${minutes}m`;
-    }
-  };
-
-  // Get sensor status for display
-  const getSensorStatus = (sensorName) => {
-    const st = sensorStatuses.find(s => s.name === sensorName) || {};
-    const currentTime = Date.now();
-    
-    // Determine if sensor is online based on last seen time
-    const lastSeenTime = st.lastSeen ? new Date(st.lastSeen).getTime() : 0;
-    const timeSince = lastSeenTime ? currentTime - lastSeenTime : null;
-    const isOnline = st.online; // Use the online status from the API directly
-    
-    // For display in table
-    let uptimeDuration = null;
-    let offlineDuration = null;
-
-    // Simply use the uptime and offline duration values from the API
-    if (isOnline) {
-      uptimeDuration = st.uptimeDuration;
-    } else {
-      offlineDuration = st.offlineDuration;
-    }
-    
-    return {
-      online: isOnline,
-      lastSeen: st.lastSeen,
-      uptimeDuration,
-      offlineDuration, 
-      startTime: st.startTime,
-    };
-  };
-
-  // Zmena viditeľnosti (prepínače)
-  const updateSingleField = (name, field, value) => {
-    console.log(`Updating visibility for ${name}: ${field} = ${value}`); // Debug log
-    api.updateSensorVisibility(name, { [field]: value })
-      .then(() => {
-        setSensors(prev =>
-          prev.map(sensor =>
-            sensor.name === name ? { ...sensor, [field]: value } : sensor
-          )
-        );
-      })
-      .catch(err => console.error("Chyba pri zmene viditeľnosti:", err));
-  };
-
-  // Pridanie novej lokácie
-  const handleAddLocation = (locationName) => {
-    if (!locationName) return;
-    
-    // Add visual feedback that the operation is in progress
-    const addButton = document.querySelector('[data-action="add-location"]');
-    if (addButton) {
-      addButton.disabled = true;
-      addButton.innerHTML = t('adding', 'Adding...');
-    }
-    
-    api.addLocation(locationName)
-      .then((response) => {
-        // Show success message
-        const successMessage = document.createElement('div');
-        successMessage.className = 'text-green-600 dark:text-green-400 text-sm mt-2 p-2 rounded bg-green-50 dark:bg-green-900/20';
-        successMessage.innerHTML = `<span class="mr-1">✅</span> ${response.message || t('locationAdded', 'Location has been added.')}`;
-        
-        const messageContainer = document.querySelector('[data-container="add-location-messages"]');
-        if (messageContainer) {
-          messageContainer.innerHTML = '';
-          messageContainer.appendChild(successMessage);
-          
-          // Auto-remove after 5 seconds
-          setTimeout(() => {
-            successMessage.remove();
-          }, 5000);
-        }
-        
-        // Reload data
-        loadSensors();
-      })
-      .catch(err => {
-        console.error("Chyba pri pridávaní lokácie:", err);
-        
-        // Show error message
-        const errorMessage = document.createElement('div');
-        errorMessage.className = 'text-red-600 dark:text-red-400 text-sm mt-2 p-2 rounded bg-red-50 dark:bg-red-900/20';
-        errorMessage.innerHTML = `<span class="mr-1">❌</span> ${err.message || t('locationAddFailed', 'Failed to add location.')}`;
-        
-        const messageContainer = document.querySelector('[data-container="add-location-messages"]');
-        if (messageContainer) {
-          messageContainer.innerHTML = '';
-          messageContainer.appendChild(errorMessage);
-          
-          // Auto-remove after 5 seconds
-          setTimeout(() => {
-            errorMessage.remove();
-          }, 5000);
-        }
-      })
-      .finally(() => {
-        // Reset button state
-        if (addButton) {
-          addButton.disabled = false;
-          addButton.innerHTML = t('add', 'Add');
-        }
-      });
-  };
-
-  // Logout
-  const handleLogout = () => {
-    api.logout()
-      .then(() => navigate("/login"))
-      .catch(err => console.error("Chyba pri odhlasovaní:", err));
-  };
+    console.log("Current language:", i18n.language);
+  }, [i18n]);
 
   // Toggle sidebar visibility
   const toggleSidebar = () => {
     setSidebarVisible(!sidebarVisible);
-  };
-
-  // Add a handler for when locations are hidden/shown
-  const handleHideLocations = (newHiddenLocations) => {
-    console.log("Updating hidden locations:", newHiddenLocations);
-    setHiddenLocations(newHiddenLocations);
-    // Save to localStorage to persist across refreshes
-    localStorage.setItem('hiddenLocations', JSON.stringify(newHiddenLocations));
-  };
-
-  // Move a location up in the order
-  const moveLocationUp = (location) => {
-    setLocationOrder(prev => {
-      // If location isn't in order yet, initialize the order
-      if (prev.length === 0) {
-        const allLocations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
-        prev = [...allLocations];
-      }
-      
-      const index = prev.indexOf(location);
-      // Can't move up if it's already at the top
-      if (index <= 0) return prev;
-      
-      const newOrder = [...prev];
-      // Swap with the item above
-      [newOrder[index], newOrder[index - 1]] = [newOrder[index - 1], newOrder[index]];
-      return newOrder;
-    });
-  };
-  
-  // Move a location down in the order
-  const moveLocationDown = (location) => {
-    setLocationOrder(prev => {
-      // If location isn't in order yet, initialize the order
-      if (prev.length === 0) {
-        const allLocations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
-        prev = [...allLocations];
-      }
-      
-      const index = prev.indexOf(location);
-      // Can't move down if it's already at the bottom or not found
-      if (index === -1 || index >= prev.length - 1) return prev;
-      
-      const newOrder = [...prev];
-      // Swap with the item below
-      [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
-      return newOrder;
-    });
-  };
-
-  // Start drag operation
-  const handleDragStart = (location) => {
-    setDraggedLocation(location);
-  };
-  
-  // Handle drag enter to show drop target
-  const handleDragEnter = (location) => {
-    if (draggedLocation && draggedLocation !== location) {
-      setDropTarget(location);
-    }
-  };
-  
-  // Handle drag leave to clear drop target
-  const handleDragLeave = () => {
-    setDropTarget(null);
-  };
-  
-  // Handle dropping a location
-  const handleDrop = (targetLocation) => {
-    if (!draggedLocation || draggedLocation === targetLocation) {
-      setDraggedLocation(null);
-      setDropTarget(null);
-      return;
-    }
-    
-    setLocationOrder(prev => {
-      // If order is empty, initialize it
-      if (prev.length === 0) {
-        const allLocations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
-        prev = [...allLocations];
-      }
-      
-      const draggedIndex = prev.indexOf(draggedLocation);
-      const targetIndex = prev.indexOf(targetLocation);
-      
-      if (draggedIndex === -1 || targetIndex === -1) {
-        return prev;
-      }
-      
-      // Create new array without the dragged location
-      const newOrder = prev.filter(loc => loc !== draggedLocation);
-      
-      // Insert the dragged location at its new position
-      newOrder.splice(targetIndex, 0, draggedLocation);
-      
-      return newOrder;
-    });
-    
-    setDraggedLocation(null);
-    setDropTarget(null);
-  };
-  
-  // Handle drag over (needed for drop to work)
-  const handleDragOver = (e) => {
-    e.preventDefault();
   };
 
   // Toggle user management visibility in main panel
@@ -411,6 +80,9 @@ export default function AdminPanel() {
     setShowUsersManagement(prev => !prev);
     if (showTelegramSettings) {
       setShowTelegramSettings(false);
+    }
+    if (showSystemMonitoring) {
+      setShowSystemMonitoring(false);
     }
   };
 
@@ -420,782 +92,346 @@ export default function AdminPanel() {
     if (showUsersManagement) {
       setShowUsersManagement(false);
     }
+    if (showSystemMonitoring) {
+      setShowSystemMonitoring(false);
+    }
   };
 
-  // Refresh all data
-  const refreshData = () => {
-    console.log("Refreshing all data...");
-    setIsRefreshing(true);
-    
-    // Load sensors and statuses
-    Promise.all([
-      loadSensors(),
-      loadStatuses()
-    ])
-    .then(() => {
-      console.log("Data refresh complete");
-    })
-    .catch(err => {
-      console.error("Error refreshing data:", err);
-    })
-    .finally(() => {
-      setIsRefreshing(false);
-    });
+  // Toggle System Monitoring visibility
+  const toggleSystemMonitoring = () => {
+    setShowSystemMonitoring(prev => !prev);
+    if (showUsersManagement) {
+      setShowUsersManagement(false);
+    }
+    if (showTelegramSettings) {
+      setShowTelegramSettings(false);
+    }
   };
+
+  // Toggle Sensor Management visibility
+  const toggleSensorManagement = () => {
+    setShowSensorManagement(prev => !prev);
+  };
+
+  // Logout
+  const handleLogout = () => {
+    api.logout()
+      .then(() => navigate("/login"))
+      .catch(err => console.error("Error during logout:", err));
+  };
+
+  // Sorted locations for rendering
+  const sortedLocations = getSortedLocations();
 
   return (
-    <div className="flex h-screen bg-white dark:bg-gray-900 overflow-hidden">
-      <AdminSidebar 
-        onReloadSensors={loadSensors} 
-        sensors={sensors} 
-        onAddLocation={handleAddLocation}
-        onHideLocation={handleHideLocations}
-        onToggleUsersManagement={toggleUsersManagement}
-        onToggleTelegramSettings={toggleTelegramSettings}
-      />
-      
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white dark:bg-gray-900 shadow border-b dark:border-gray-800 px-6 py-4 flex justify-between items-center z-10">
-          <h1 className="text-xl font-medium text-gray-800 dark:text-white">{t('adminPanelTitle')}</h1>
-          <div className="flex space-x-2">
-            <HeaderButton
-              icon="🌍"
-              label={i18n.language === 'sk' ? 'SK / EN' : 'EN / SK'}
-              onClick={() => i18n.changeLanguage(i18n.language === 'sk' ? 'en' : 'sk')}
-              color="blue"
-            />
-            <HeaderButton
-              icon="👥"
-              label={showUsersManagement ? t('hideUsers') || "Hide Users" : t('showUsers') || "Show Users"}
-              onClick={toggleUsersManagement}
-              color={showUsersManagement ? "blue" : "gray"}
-            />
-            <HeaderButton
-              icon="🔔"
-              label={t('telegramAlerts') || 'Telegram Alerts'}
-              onClick={toggleTelegramSettings}
-              color={showTelegramSettings ? "blue" : "gray"}
-            />
-            <HeaderButton
-              icon={isRefreshing ? "⏳" : "🔄"}
-              label={isRefreshing ? (t('refreshing') || "Refreshing...") : (t('refresh') || "Refresh")}
+    <div className="flex flex-col min-h-screen bg-gray-50">
+      {/* Header with improved styling */}
+      <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={toggleSidebar}
+              className="p-2 rounded-md text-gray-600 hover:bg-gray-100 transition-colors"
+              aria-label="Toggle sidebar"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <div className="flex items-center">
+              <h1 className="text-xl font-semibold text-gray-800">
+                {t('adminPanelTitle')}
+              </h1>
+              {isRefreshing && (
+                <div className="ml-3 flex items-center">
+                  <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                  <span className="ml-2 text-sm text-gray-500">{t('loading')}</span>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <button
               onClick={refreshData}
               disabled={isRefreshing}
-            />
-            <HeaderButton
-              icon="🚪"
-              label={t('logout') || "Logout"}
+              className={`p-2 rounded-md text-sm transition-colors flex items-center ${
+                isRefreshing ? "text-gray-400 cursor-not-allowed" : "text-blue-600 hover:bg-blue-50"
+              }`}
+              aria-label="Reload data"
+            >
+              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {t('refresh')}
+            </button>
+            
+            <button
+              onClick={toggleUsersManagement}
+              className={`p-2 rounded-md text-sm ${
+                showUsersManagement ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"
+              } transition-colors flex items-center`}
+            >
+              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+              {t('users')}
+            </button>
+            
+            <button
+              onClick={toggleTelegramSettings}
+              className={`p-2 rounded-md text-sm ${
+                showTelegramSettings ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"
+              } transition-colors flex items-center`}
+            >
+              {/* Telegram Icon */}
+              <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.96 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+              </svg>
+              {t('telegramAlerts')}
+            </button>
+            
+            <button
+              onClick={toggleSystemMonitoring}
+              className="p-2 rounded-md text-sm text-gray-600 hover:bg-gray-100 transition-colors flex items-center"
+            >
+              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              {t('systemHealth')}
+            </button>
+            
+            <button
+              onClick={toggleSensorManagement}
+              className={`p-2 rounded-md text-sm ${
+                showSensorManagement ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"
+              } transition-colors flex items-center`}
+            >
+              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+              {t('manageSensors')}
+            </button>
+            
+            <button
               onClick={handleLogout}
-              color="red"
-            />
+              className="p-2 rounded-md text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center"
+            >
+              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              {t('logout')}
+            </button>
           </div>
-        </header>
-        
-        <main className="flex-1 overflow-auto p-6 relative">
-          {/* Users Management Section (conditionally shown in main view) */}
-          {showUsersManagement && (
-            <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow">
-              <div className="flex justify-between items-center px-6 py-4 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800 sticky top-0 z-10">
-                <h2 className="text-lg font-medium text-blue-800 dark:text-blue-300">{t('userManagement') || 'Manage Users'}</h2>
-                <button 
-                  onClick={toggleUsersManagement}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+        </div>
+      </header>
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar with improved styling */}
+        <AdminSidebar 
+          isOpen={sidebarVisible} 
+          sensors={sensors || []}
+          onReloadSensors={refreshData}
+          onAddLocation={addLocation}
+          onHideLocation={updateHiddenLocations}
+          onToggleUsersManagement={toggleUsersManagement}
+          onToggleTelegramSettings={toggleTelegramSettings}
+          onToggleSystemMonitoring={toggleSystemMonitoring}
+          onToggleSensorManagement={toggleSensorManagement}
+        />
+
+        {/* Main content */}
+        <main className="flex-1 overflow-y-auto p-4">
+          {/* Modal components */}
+          {showUsersManagement && <UsersManagement t={t} onClose={toggleUsersManagement} />}
+          {showTelegramSettings && <TelegramSettings t={t} onClose={toggleTelegramSettings} />}
+          {showSystemMonitoring && <SystemMonitoring t={t} onClose={toggleSystemMonitoring} />}
+
+          {/* Sensors table with improved styling */}
+          {showSensorManagement && (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-lg font-medium text-gray-800">{t('manageSensors')}</h2>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={refreshData}
+                  disabled={isRefreshing}
+                  className={`p-2 rounded-full ${
+                    isRefreshing ? "text-gray-400" : "text-blue-600 hover:bg-blue-50"
+                  }`}
+                  title={t('refresh')}
                 >
-                  ✕
+                  <svg className={`w-5 h-5 ${isRefreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
                 </button>
-              </div>
-              <div className="p-6 max-h-[80vh] overflow-y-auto">
-                <UsersManagement t={t} />
+                <button
+                  onClick={() => {
+                    const locationName = window.prompt(t('addLocationPrompt') || 'Zadajte názov novej lokality:');
+                    if (locationName) addLocation(locationName);
+                  }}
+                  className="p-2 rounded-md text-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center"
+                  title={t('addLocationTooltip')}
+                >
+                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  {t('addLocation')}
+                </button>
+                  {/* Add close button for sensors section */}
+                  <button
+                    onClick={toggleSensorManagement}
+                    className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
+                    title={t('close') || 'Close'}
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
               </div>
             </div>
-          )}
-          
-          {/* Telegram Settings Section (conditionally shown in main view) */}
-          {showTelegramSettings && (
-            <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow">
-              <div className="flex justify-between items-center px-6 py-4 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-100 dark:border-blue-800 sticky top-0 z-10">
-                <h2 className="text-lg font-medium text-blue-800 dark:text-blue-300">{t('telegramAlerts') || 'Telegram Alerts'}</h2>
-                <button 
-                  onClick={toggleTelegramSettings}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="p-6 max-h-[80vh] overflow-y-auto">
-                <TelegramSettings t={t} />
-              </div>
-            </div>
-          )}
-          
-          {/* Existing sensor data and charts */}
-          <div className="flex flex-wrap -mx-2">
-            {/* Tabuľka so senzormi */}
-            <div className="bg-white dark:bg-gray-800 shadow-sm rounded-lg overflow-x-auto mb-6 w-full">
-              <table className="w-full text-sm border-collapse">
-                <thead className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+            
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
                   <tr>
-                    <th className="p-3 text-center font-semibold">📍 {t('sensorName')}</th>
-                    <th className="p-3 font-semibold">📌 {t('locations')}</th>
-                    <th className="p-3 font-semibold">🧾 {t('cards')}</th>
-                    <th className="p-3 text-right font-semibold">🧠 {t('status')}</th>
-                    <th className="p-3 text-right font-semibold">📊 {t('graph')}</th>
-                    <th className="p-3 text-right font-semibold">🗑️</th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('status')}
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('sensorName')}
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('data')}
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('cards')}
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('locations')}
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('actions')}
+                    </th>
                   </tr>
                 </thead>
-                <tbody>
-                  {(() => {
-                    // Get all unique locations
-                    let locations = [...new Set(sensors.map(sensor => sensor.name.split('_')[0]))];
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {/* Render locations and sensors */}
+                  {sortedLocations.map((location) => {
+                    // Get sensors for this location
+                    const locationSensors = sensors.filter(sensor => 
+                      sensor.name.split('_')[0] === location
+                    );
                     
-                    // Sort locations according to custom order
-                    if (locationOrder.length > 0) {
-                      locations.sort((a, b) => {
-                        const indexA = locationOrder.indexOf(a);
-                        const indexB = locationOrder.indexOf(b);
-                        
-                        // If not in order array, put at the end
-                        if (indexA === -1 && indexB === -1) return 0;
-                        if (indexA === -1) return 1;
-                        if (indexB === -1) return -1;
-                        
-                        return indexA - indexB;
-                      });
-                    }
-                    
-                    // Filter out hidden locations
-                    locations = locations.filter(loc => !hiddenLocations.includes(loc));
-                    
-                    // Render each location group
-                    return locations.map((location, index) => {
-                      // Get sensors for this location
-                      const locationSensors = sensors.filter(sensor => 
-                        sensor.name.split('_')[0] === location
-                      );
-                      
-                      return (
-                        <React.Fragment key={location}>
-                          {/* Only show the hint when dragging starts */}
-                          {draggedLocation && index === 0 && (
-                            <tr>
-                              <td colSpan={7} className="p-2 bg-yellow-50 dark:bg-yellow-900/20 text-sm">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-yellow-600 dark:text-yellow-400">💡</span>
-                                  <span>{t('dragDropHint') || 'Lokality môžete presúvať ťahaním alebo pomocou šípok'}</span>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                          
-                          {/* Location header row with drag and drop */}
-                          <tr 
-                            className={`${
-                              draggedLocation === location 
-                                ? 'bg-blue-200 dark:bg-blue-800/60' 
-                                : dropTarget === location
-                                  ? 'bg-green-100 dark:bg-green-900/30 border-2 border-green-400 dark:border-green-600' 
-                                  : 'bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40'
-                            } transition-colors duration-150 cursor-move`}
-                            draggable="true"
-                            onDragStart={() => handleDragStart(location)}
-                            onDragEnter={() => handleDragEnter(location)}
-                            onDragLeave={handleDragLeave}
-                            onDragOver={handleDragOver}
-                            onDrop={() => handleDrop(location)}
-                          >
-                            <td colSpan={7} className="p-2">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  <span className="text-gray-500 dark:text-gray-400">≡</span>
-                                  <span className="font-bold text-blue-800 dark:text-blue-300">{location}</span>
-                                  {draggedLocation === location && (
-                                    <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">
-                                      {t('dragging') || 'Presúvanie...'}
-                                    </span>
-                                  )}
-                                  {dropTarget === location && (
-                                    <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded-full animate-pulse">
-                                      {t('dropHere') || 'Pustiť sem'}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button 
-                                    onClick={() => moveLocationUp(location)}
-                                    className="p-1 px-2.5 text-gray-600 hover:text-white hover:bg-blue-600 rounded"
-                                    title={t('moveUp')}
-                                  >
-                                    ↑
-                                  </button>
-                                  <button 
-                                    onClick={() => moveLocationDown(location)}
-                                    className="p-1 px-2.5 text-gray-600 hover:text-white hover:bg-blue-600 rounded"
-                                    title={t('moveDown')}
-                                  >
-                                    ↓
-                                  </button>
-                                </div>
+                    return (
+                      <React.Fragment key={location}>
+                        {/* Only show the hint when dragging starts */}
+                        {draggedLocation && location === 0 && (
+                          <tr>
+                            <td colSpan={7} className="p-2 bg-yellow-50 dark:bg-yellow-900/20 text-sm">
+                              <div className="flex items-center gap-2">
+                                <span className="text-yellow-600 dark:text-yellow-400">💡</span>
+                                <span>{t('dragDropHint') || 'Lokality môžete presúvať ťahaním alebo pomocou šípok'}</span>
                               </div>
                             </td>
                           </tr>
-                          
-                          {/* Sensors for this location */}
-                          {locationSensors.map(sensor => (
-                            <SensorRow
-                              key={sensor.name}
-                              sensor={sensor}
-                              getSensorStatus={getSensorStatus}
-                              updateSingleField={updateSingleField}
-                              reloadSensors={loadSensors}
-                              t={t}
-                            />
-                          ))}
-                        </React.Fragment>
-                      );
-                    });
-                  })()}
+                        )}
+                        
+                        {/* Location header row with drag and drop */}
+                        <tr 
+                          className={`${
+                            draggedLocation === location 
+                              ? 'bg-blue-200 dark:bg-blue-800/60' 
+                              : dropTarget === location
+                                ? 'bg-green-100 dark:bg-green-900/30 border-2 border-green-400 dark:border-green-600' 
+                                : 'bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40'
+                          } transition-colors duration-150 cursor-move`}
+                          draggable="true"
+                          onDragStart={() => handleDragStart(location)}
+                          onDragEnter={() => handleDragEnter(location)}
+                          onDragLeave={handleDragLeave}
+                          onDragOver={(e) => { e.preventDefault(); }}
+                          onDrop={() => handleDrop(location)}
+                        >
+                          <td colSpan={7} className="p-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="text-gray-500 dark:text-gray-400">≡</span>
+                                <span className="font-bold text-blue-800 dark:text-blue-300">{location}</span>
+                                {draggedLocation === location && (
+                                  <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                                    {t('dragging') || 'Presúvanie...'}
+                                  </span>
+                                )}
+                                {dropTarget === location && (
+                                  <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded-full animate-pulse">
+                                    {t('dropHere') || 'Pustiť sem'}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button 
+                                  onClick={() => moveLocationUp(location)}
+                                  className="p-1 px-2.5 text-gray-600 hover:text-white hover:bg-blue-600 rounded"
+                                >
+                                  ▲
+                                </button>
+                                <button 
+                                  onClick={() => moveLocationDown(location)}
+                                  className="p-1 px-2.5 text-gray-600 hover:text-white hover:bg-blue-600 rounded"
+                                >
+                                  ▼
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                        
+                        {/* Render rows for each sensor in this location */}
+                        {locationSensors.map(sensor => (
+                          <SensorRow 
+                            key={sensor.name}
+                            sensor={sensor}
+                            status={getSensorStatus(sensor.name)}
+                            onUpdate={(field, value) => updateSingleField(sensor.name, field, value)}
+                          />
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
+          )}
         </main>
       </div>
     </div>
   );
 }
 
-/** Jeden senzor v tabuľke */
-function SensorRow({ sensor, getSensorStatus, updateSingleField, reloadSensors, t }) {
-  const [showChart, setShowChart] = useState(false);
-  const [range, setRange] = useState("24h");
-  const [uptimeData, setUptimeData] = useState([]);
-  const [chartError, setChartError] = useState(null);
-  const status = getSensorStatus(sensor.name);
-
-  // Debounce
-  const [debouncedRange, setDebouncedRange] = useState(range);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedRange(range), 300);
-    return () => clearTimeout(timer);
-  }, [range]);
-
-  // Load data if showChart
-  useEffect(() => {
-    if (!showChart) return;
-    
-    setChartError(null);
-    
-    console.log(`Fetching data for ${sensor.name} with range: ${debouncedRange}`);
-    
-    // Set loading timeout for long-running requests
-    const timeoutId = setTimeout(() => {
-      console.log(`Request for ${sensor.name} with range ${debouncedRange} is taking a long time...`);
-    }, 5000);
-    
-    api.getSensorHistory(sensor.name, debouncedRange)
-      .then(data => {
-        clearTimeout(timeoutId);
-        
-        console.log(`Received ${data?.length || 0} data points for ${sensor.name} with range ${debouncedRange}`);
-        
-        // Check for valid data
-        if (!data || !Array.isArray(data) || data.length === 0) {
-          console.warn(`No data received for ${sensor.name} with range ${debouncedRange}`);
-          setUptimeData([]);
-          return;
-        }
-        
-        // Log first and last data point for debugging
-        const first = data[0];
-        const last = data[data.length - 1];
-        console.log('First data point:', first);
-        console.log('Last data point:', last);
-        
-        // Special handling for 365d view - pre-aggregate data to improve performance
-        if (debouncedRange === "365d") {
-          console.log(`Processing 365d data for ${sensor.name} with ${data.length} points`);
-          
-          // For 365d, always preprocess for better performance
-          const processedData = preprocessLongRangeData(data);
-          setUptimeData(processedData);
-        } else {
-          setUptimeData(data);
-        }
-      })
-      .catch(err => {
-        clearTimeout(timeoutId);
-        console.error(`Error fetching data for ${sensor.name} with range ${debouncedRange}:`, err);
-        setChartError(err.message || "Error loading chart data");
-        setUptimeData([]);
-      });
-      
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [sensor.name, debouncedRange, showChart]);
-
-  const { online, offline } = useMemo(
-    () => generateStackedData(uptimeData),
-    [uptimeData]
-  );
-
-  const downloadCSV = () => {
-    const header = "timestamp,online";
-    const csvRows = uptimeData.map((d) => {
-      const timeStr = d.timestamp || d._time;
-      if (!timeStr) return "";
-      const isoTs = timeStr.replace(" ", "T");
-      const ts = new Date(isoTs).toISOString();
-      const isOn = d.online === false ? "Offline" : "Online";
-      return `${ts},${isOn}`;
-    });
-    const blob = new Blob([header + "\n" + csvRows.join("\n")], {
-      type: "text/csv;charset=utf-8;",
-    });
-    saveAs(blob, `${sensor.name}_${range}.csv`);
-  };
-
-  // farba stavu
-  const isHidden =
-    sensor.cardVisible === false && sensor.locationVisible === false;
-  const ageMs = status.lastSeen
-    ? Date.now() - new Date(status.lastSeen).getTime()
-    : Infinity;
-  let statusColor = "bg-gray-400";
-  if (status.lastSeen) {
-    if (ageMs > 10 * 60 * 1000) statusColor = "bg-red-500";
-    else statusColor = "bg-green-500";
-  }
-
-  // Zmazanie lokácie
-  const handleDeleteLocation = () => {
-    if (!window.confirm(t('deleteConfirmation'))) return;
-    
-    api.deleteLocation(sensor.name)
-      .then(msg => {
-        alert(msg);
-        if (typeof reloadSensors === "function") reloadSensors();
-      })
-      .catch(err => {
-        console.error(err);
-        alert("Nepodarilo sa zmazať lokáciu");
-      });
-  };
-
-  const [cursorInfo, setCursorInfo] = useState(null);
-  const timelineRef = useRef(null);
-  
-  // Enhanced data aggregation for long ranges
-  const aggregatedData = useMemo(() => {
-    if (!Array.isArray(online) || online.length === 0) return { aggregated: [], timeMarkers: [] };
-    
-    const totalTimespan = online[online.length - 1].x - online[0].x;
-    const startTime = online[0].x;
-    const endTime = online[online.length - 1].x;
-    
-    // Determine how many segments we want based on time range
-    let segmentCount = 24; // Default for 24h view
-    
-    if (range === '7d') segmentCount = 28; // 4-hour segments for 7 days
-    else if (range === '30d') segmentCount = 30; // Daily segments for 30 days
-    else if (range === '365d') segmentCount = 24; // ~15-day segments for a year
-    
-    const segmentDuration = totalTimespan / segmentCount;
-    const aggregated = [];
-    const timeMarkers = [];
-    
-    // Generate time markers for the x-axis (more points for better readability)
-    const markerCount = Math.min(10, segmentCount);
-    const markerInterval = totalTimespan / (markerCount - 1);
-    
-    for (let i = 0; i < markerCount; i++) {
-      const markerTime = startTime + (i * markerInterval);
-      timeMarkers.push(markerTime);
-    }
-    
-    // Aggregate data into segments
-    for (let i = 0; i < segmentCount; i++) {
-      const segmentStart = startTime + (i * segmentDuration);
-      const segmentEnd = segmentStart + segmentDuration;
-      
-      // Find all points that fall within this segment
-      const segmentPoints = online.filter(point => 
-        point.x >= segmentStart && point.x < segmentEnd && point.y === 1
-      );
-      
-      // Calculate what percentage of this segment was online
-      const onlineTime = segmentPoints.reduce((total, current, index, array) => {
-        if (index === 0) return 0;
-        const prevPoint = array[index - 1];
-        if (prevPoint.y === 1 && current.y === 1) {
-          return total + (current.x - prevPoint.x);
-        }
-        return total;
-      }, 0);
-      
-      const onlinePercentage = segmentPoints.length > 0 ? 
-        Math.min(1, onlineTime / segmentDuration) : 0;
-      
-      aggregated.push({
-        startTime: segmentStart,
-        endTime: segmentEnd,
-        onlinePercentage: onlinePercentage,
-        hasData: segmentPoints.length > 0
-      });
-    }
-    
-    return { aggregated, timeMarkers };
-  }, [online, range]);
-  
-  // Handle mouse move to show cursor info
-  const handleMouseMove = (e) => {
-    if (!timelineRef.current || !online || online.length === 0) return;
-    
-    const rect = timelineRef.current.getBoundingClientRect();
-    const relativeX = e.clientX - rect.left;
-    const percentage = relativeX / rect.width;
-    
-    // Calculate the time at cursor position
-    const timeRange = online[online.length - 1].x - online[0].x;
-    const cursorTime = online[0].x + (timeRange * percentage);
-    
-    // Find the closest data point to display its status
-    let closestPoint = null;
-    let minDistance = Infinity;
-    
-    for (const point of online) {
-      const distance = Math.abs(point.x - cursorTime);
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestPoint = point;
-      }
-    }
-    
-    setCursorInfo({
-      time: cursorTime,
-      status: closestPoint?.y === 1 ? 'online' : 'offline',
-      position: relativeX
-    });
-  };
-  
-  const handleMouseLeave = () => {
-    setCursorInfo(null);
-  };
-
-  return (
-    <>
-      <tr
-        className={`border-t hover:bg-gray-100 ${
-          isHidden ? "text-gray-400 bg-gray-50" : ""
-        }`}
-      >
-        <td className="p-2 font-medium text-center">
-          {sensor.name}
-          {isHidden && (
-            <span className="ml-1 text-xs" title={t('hidden')}>
-              🔒
-            </span>
-          )}
-        </td>
-        <td className="p-2">
-          {/* Prepínač locationVisible */}
-          <label className="flex justify-center items-center cursor-pointer">
-            <input
-              type="checkbox"
-              className="sr-only peer"
-              checked={sensor.locationVisible !== false}
-              onChange={(e) =>
-                updateSingleField(sensor.name, "locationVisible", e.target.checked)
-              }
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:bg-blue-600 relative">
-              <div className="w-5 h-5 bg-white rounded-full shadow absolute top-0.5 left-0.5 peer-checked:translate-x-full transition-transform duration-300"></div>
-            </div>
-          </label>
-        </td>
-        <td className="p-2">
-          {/* Prepínač cardVisible */}
-          <label className="flex justify-center items-center cursor-pointer">
-            <input
-              type="checkbox"
-              className="sr-only peer"
-              checked={sensor.cardVisible !== false}
-              onChange={(e) =>
-                updateSingleField(sensor.name, "cardVisible", e.target.checked)
-              }
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-green-500 rounded-full peer peer-checked:bg-green-600 relative">
-              <div className="w-5 h-5 bg-white rounded-full shadow absolute top-0.5 left-0.5 peer-checked:translate-x-full transition-transform duration-300"></div>
-            </div>
-          </label>
-        </td>
-        {/* Status and Uptime/Downtime Column */}
-        <td className="p-2 text-right">
-          <div className="flex flex-col items-end">
-            {/* Online/Offline Status */}
-            <div className={`mb-1 px-2 py-1 rounded text-white text-xs font-semibold ${statusColor}`}>
-              {status.online ? t('active') : t('inactive')}
-            </div>
-            
-            {/* Uptime (when online) */}
-            {status.online && status.uptimeDuration && (
-              <div className="text-xs text-green-600 font-medium">
-                <span title={t('uptime')}>⏱️ {t('uptime')}: {status.uptimeDuration}</span>
-              </div>
-            )}
-            
-            {/* Downtime (when offline) */}
-            {!status.online && status.offlineDuration && (
-              <div className="text-xs text-red-600 font-medium">
-                <span title={t('offline')}>⚠️ {t('offline')}: {status.offlineDuration}</span>
-              </div>
-            )}
-            
-            {/* Last seen timestamp */}
-            <div className="text-[11px] text-gray-500 mt-1">
-              {status.lastSeen
-                ? new Date(status.lastSeen).toLocaleString()
-                : "–"}
-            </div>
-          </div>
-        </td>
-        <td className="p-2 text-right">
-          <button
-            onClick={() => setShowChart(!showChart)}
-            className="text-blue-600 hover:underline text-sm"
-          >
-            {showChart ? `📉 ${t('hide')}` : `📊 ${t('show')}`}
-          </button>
-        </td>
-
-        {/* Tlačidlo zmazania */}
-        <td className="p-2 text-right">
-          <button
-            onClick={handleDeleteLocation}
-            className="text-red-600 hover:underline text-sm"
-            title={t('deleteLocation')}
-          >
-            🗑️
-          </button>
-        </td>
-      </tr>
-
-      {/* Chart row */}
-      {showChart && (
-        <tr>
-          <td colSpan={7} className="p-3">
-            <div className="bg-white p-4 rounded shadow-md">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-lg font-semibold">
-                  📈 {t('uptimeChart')}: {sensor.name}
-                </h3>
-                <div className="space-x-2">
-                  {["24h", "7d", "30d", "365d"].map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => setRange(r)}
-                      className={`px-2 py-1 rounded border ${
-                        range === r ? "bg-blue-500 text-white" : "bg-gray-200"
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                  <button
-                    onClick={downloadCSV}
-                    className="ml-4 px-2 py-1 rounded bg-gray-200"
-                  >
-                    {t('downloadCSV')}
-                  </button>
-                </div>
-              </div>
-
-              {chartError ? (
-                <div className="text-center py-4 text-red-500">
-                  <p>{chartError}</p>
-                  <button 
-                    onClick={() => {
-                      setChartError(null);
-                      api.getSensorHistory(sensor.name, debouncedRange)
-                        .then(data => setUptimeData(data))
-                        .catch(err => setChartError(err.message));
-                    }}
-                    className="mt-2 px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-                  >
-                    {t('retry')}
-                  </button>
-                </div>
-              ) : (
-                <div className="timeline-wrapper">
-                  <div 
-                    ref={timelineRef}
-                    className="w-full h-48 relative bg-white border border-gray-200 rounded overflow-hidden cursor-crosshair"
-                    onMouseMove={handleMouseMove}
-                    onMouseLeave={handleMouseLeave}
-                  >
-                    {/* Header with labels */}
-                    <div className="absolute top-0 left-0 w-full h-8 bg-gray-50 border-b border-gray-200 flex items-center px-3 text-sm font-medium z-10">
-                      <span>{t ? t('status') : "Status"}</span>
-                      
-                      {/* Show current time at cursor position */}
-                      {cursorInfo && (
-                        <div className="ml-auto text-xs text-gray-600">
-                          {new Date(cursorInfo.time).toLocaleString()} - 
-                          <span className={cursorInfo.status === 'online' ? 'text-green-600 ml-1' : 'text-red-600 ml-1'}>
-                            {cursorInfo.status === 'online' ? (t ? t('active') : 'Online') : (t ? t('inactive') : 'Offline')}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Timeline area */}
-                    <div className="absolute top-8 left-0 right-0 bottom-8 overflow-hidden px-2">
-                      {online && online.length > 0 ? (
-                        <div className="h-full w-full relative py-4">
-                          {/* Background grid lines */}
-                          <div className="absolute h-px w-full top-1/3 bg-gray-100"></div>
-                          <div className="absolute h-px w-full top-2/3 bg-gray-100"></div>
-                          
-                          {/* Timeline bar - light gray background */}
-                          <div className="absolute top-1/2 left-0 h-4 w-full bg-gray-100 -translate-y-1/2 rounded"></div>
-                          
-                          {/* Vertical time markers */}
-                          {aggregatedData.timeMarkers.map((time, index) => (
-                            <div 
-                              key={`marker-${index}`}
-                              className="absolute top-0 bottom-0 w-px bg-gray-200"
-                              style={{ 
-                                left: `${((time - online[0].x) / (online[online.length - 1].x - online[0].x)) * 100}%`
-                              }}
-                            />
-                          ))}
-                          
-                          {/* Online periods - using aggregated data for long ranges */}
-                          {range === '30d' || range === '365d' 
-                            ? aggregatedData.aggregated.map((segment, index) => {
-                                if (!segment.hasData) return null;
-                                
-                                const totalTime = online[online.length - 1].x - online[0].x;
-                                const startPos = ((segment.startTime - online[0].x) / totalTime) * 100;
-                                const width = ((segment.endTime - segment.startTime) / totalTime) * 100;
-                                
-                                // Adjust opacity based on percentage of time online
-                                const opacity = 0.3 + (segment.onlinePercentage * 0.7);
-                                
-                                return (
-                                  <div 
-                                    key={`segment-${index}`}
-                                    className="absolute top-1/2 h-4 bg-green-500 rounded -translate-y-1/2"
-                                    style={{ 
-                                      left: `${startPos}%`,
-                                      width: `${Math.max(0.2, width)}%`,
-                                      opacity: opacity
-                                    }}
-                                    title={`${t ? t('active') : "Online"}: ${Math.round(segment.onlinePercentage * 100)}% of time between ${new Date(segment.startTime).toLocaleString()} - ${new Date(segment.endTime).toLocaleString()}`}
-                                  />
-                                );
-                              })
-                            : online.map((point, index) => {
-                                // Skip null points
-                                if (point.y === null) return null;
-                                
-                                const nextPoint = online[index + 1];
-                                // Skip if no next point
-                                if (!nextPoint) return null;
-                                
-                                // Only show segments where the sensor is online
-                                if (point.y !== 1) return null;
-                                
-                                const duration = nextPoint.x - point.x;
-                                const totalTime = online[online.length - 1].x - online[0].x;
-                                const widthPercent = (duration / totalTime) * 100;
-                                
-                                const startPos = ((point.x - online[0].x) / totalTime) * 100;
-                                
-                                // Format the time for tooltip
-                                const startTime = new Date(point.x).toLocaleString();
-                                const endTime = new Date(nextPoint.x).toLocaleString();
-                                
-                                return (
-                                  <div 
-                                    key={`online-${index}`}
-                                    className="absolute top-1/2 h-4 bg-green-500 rounded -translate-y-1/2"
-                                    style={{ 
-                                      left: `${startPos}%`,
-                                      width: `${Math.max(0.2, widthPercent)}%`
-                                    }}
-                                    title={`${t ? t('active') : "Online"}: ${startTime} - ${endTime}`}
-                                  />
-                                );
-                              })
-                          }
-                          
-                          {/* Cursor line */}
-                          {cursorInfo && (
-                            <div 
-                              className="absolute top-0 bottom-0 w-px bg-blue-500 z-10"
-                              style={{ left: cursorInfo.position + 'px' }}
-                            />
-                          )}
-                        </div>
-                      ) : (
-                        <div className="h-full w-full flex items-center justify-center">
-                          <p className="text-gray-500">{t ? t('noDataForRange') : "Žiadne dáta pre tento rozsah."}</p>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Time axis with more markers */}
-                    <div className="absolute h-8 bottom-0 left-0 right-0 border-t border-gray-200 flex items-center px-0 text-xs bg-gray-50">
-                      {online && online.length > 0 && aggregatedData.timeMarkers.length > 0 ? (
-                        <div className="w-full px-3 relative flex items-center">
-                          {aggregatedData.timeMarkers.map((time, index) => (
-                            <div 
-                              key={`label-${index}`} 
-                              className={`absolute text-gray-600 transform -translate-x-1/2 ${index === 0 ? 'text-left' : index === aggregatedData.timeMarkers.length - 1 ? 'text-right' : ''}`}
-                              style={{ 
-                                left: `${((time - online[0].x) / (online[online.length - 1].x - online[0].x)) * 100}%`
-                              }}
-                            >
-                              {new Date(time).toLocaleString().split(',')[0]}
-                              <br />
-                              {new Date(time).toLocaleString().split(',')[1]}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-gray-500 px-3">{t ? t('noTimeData') : "No time data available"}</div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Enhanced legend with information */}
-                  <div className="mt-2 flex items-center gap-2 text-xs text-gray-600">
-                    <div className="w-3 h-3 bg-green-500 rounded"></div>
-                    <span>{t ? t('active') : "Online"}</span>
-                    <span className="ml-2 text-gray-400">({t ? t('blankIsOffline') : "Blank periods are offline"})</span>
-                    
-                    {range === '30d' || range === '365d' ? (
-                      <span className="ml-auto text-gray-500">
-                        {t ? t('dataAggregated') : "Data is aggregated"} - {t ? t('opacityShows') : "opacity shows percentage of time online"}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              )}
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
 /** Funkcia generuje stacked data pre graf (Online/Offline). */
 function generateStackedData(uptimeData) {
+  // Add extra safety checks at the beginning
+  if (!uptimeData) {
+    console.warn('generateStackedData received undefined/null uptimeData');
+    const now = new Date().getTime();
+    return { 
+      online: [{ x: now, y: null }],
+      offline: [{ x: now, y: null }]
+    };
+  }
+
+  const gapThreshold = 30 * 60 * 1000; // 30 min for gap display
+  const sampleInterval = 5 * 60 * 1000; // 5 min for downsampling
+  const briefOutageThreshold = 5 * 60 * 1000; // 5 min threshold for brief outages
+  const onlineSeries = [];
+  const offlineSeries = [];
+  let previousSampleTime = null;
+  let previousStatus = null;
+  let lastOnlineTime = null;
+
   if (!Array.isArray(uptimeData) || uptimeData.length === 0) {
-    console.warn('No data to generate stacked series');
-    
     // Return data with at least one valid point to prevent ApexCharts errors
     const now = new Date().getTime();
     return { 
@@ -1204,26 +440,13 @@ function generateStackedData(uptimeData) {
     };
   }
 
-  // Fixed thresholds like in the HEATMAP version
-  const gapThreshold = 30 * 60 * 1000; // 30 min for gap display
-  const sampleInterval = 5 * 60 * 1000; // 5 min for downsampling
-  const briefOutageThreshold = 5 * 60 * 1000; // 5 min threshold for brief outages
-  
   // Sort data by timestamp to ensure proper sequence
   const sortedData = [...uptimeData].sort((a, b) => {
     const timeA = a.timestamp || a._time;
     const timeB = b.timestamp || b._time;
-    if (!timeA || !timeB) return 0;
-    return new Date(timeA.replace(" ", "T")) - new Date(timeB.replace(" ", "T"));
+    return new Date(timeA) - new Date(timeB);
   });
   
-  // Set up temporary variables
-  const onlineSeries = [];
-  const offlineSeries = [];
-  let previousSampleTime = null;
-  let previousStatus = null;
-  let lastOnlineTime = null;
-
   // Process the data points
   for (let i = 0; i < sortedData.length; i++) {
     const point = sortedData[i];
@@ -1248,10 +471,14 @@ function generateStackedData(uptimeData) {
     }
     
     // Determine if point is online based on the data
-    const isOnline = point.online !== false;
+    // Fix: Be more explicit about checking online status
+    const isOnline = point.online !== undefined ? point.online !== false : null;
+    
+    // Skip points with undefined status
+    if (isOnline === null) continue;
     
     // Track changes in online status
-    if (isOnline && !previousStatus) {
+    if (isOnline && previousStatus === false) {
       // Transition from offline to online
       
       // Check if this is a brief outage (less than the threshold)
@@ -1270,7 +497,7 @@ function generateStackedData(uptimeData) {
           }
         }
       }
-    } else if (!isOnline && previousStatus) {
+    } else if (!isOnline && previousStatus === true) {
       // Transition from online to offline
       lastOnlineTime = previousSampleTime;
     }
@@ -1310,7 +537,7 @@ function generateStackedData(uptimeData) {
       }
     }
     
-    // Add the current data point
+    // Add the current data point with explicit status values
     onlineSeries.push({ x: currentTime, y: isOnline ? 1 : null });
     offlineSeries.push({ x: currentTime, y: isOnline ? null : 1 });
     
@@ -1320,14 +547,16 @@ function generateStackedData(uptimeData) {
   
   // Add proper end point if the sensor is currently offline
   const now = Date.now();
-  const lastTimepoint = sortedData[sortedData.length - 1];
-  const lastTimepointTime = new Date(lastTimepoint.timestamp || lastTimepoint._time).getTime();
-  const isOfflineThreshold = 10 * 60 * 1000; // 10 minutes
-  
-  if (now - lastTimepointTime > isOfflineThreshold) {
-    // Sensor is currently offline, add a point to show it
-    onlineSeries.push({ x: now, y: null });
-    offlineSeries.push({ x: now, y: 1 });
+  if (sortedData.length > 0) {
+    const lastTimepoint = sortedData[sortedData.length - 1];
+    const lastTimepointTime = new Date(lastTimepoint.timestamp || lastTimepoint._time).getTime();
+    const isOfflineThreshold = 10 * 60 * 1000; // 10 minutes
+    
+    if (now - lastTimepointTime > isOfflineThreshold) {
+      // Sensor is currently offline, add a point to show it
+      onlineSeries.push({ x: now, y: null });
+      offlineSeries.push({ x: now, y: 1 });
+    }
   }
   
   // Ensure we have at least one point to prevent ApexCharts errors
@@ -1337,95 +566,73 @@ function generateStackedData(uptimeData) {
     offlineSeries.push({ x: now, y: null });
   }
   
+  // Add a final safety check before returning
+  if (!Array.isArray(onlineSeries) || onlineSeries.length === 0) {
+    const now = new Date().getTime();
+    return { 
+      online: [{ x: now, y: null }],
+      offline: [{ x: now, y: null }]
+    };
+  }
+  
   return { online: onlineSeries, offline: offlineSeries };
 }
 
-// Helper function to preprocess 365d data
+// Helper function to preprocess 365d data - optimized for better performance
 function preprocessLongRangeData(data) {
   if (!Array.isArray(data) || data.length === 0) return data;
-
+  
   // Sort data by timestamp
   const sortedData = [...data].sort((a, b) => {
     const timeA = a.timestamp || a._time;
     const timeB = b.timestamp || b._time;
     return new Date(timeA) - new Date(timeB);
   });
-
-  // For long ranges like 365d, we need to retain enough points to
-  // accurately represent the data, while avoiding overwhelming the client.
-  // We'll use a week-based bucketing approach to ensure even distribution of points.
-  const processed = [];
   
-  // Extract the time range
-  const firstTime = new Date(sortedData[0].timestamp || sortedData[0]._time).getTime();
-  const lastTime = new Date(sortedData[sortedData.length - 1].timestamp || sortedData[sortedData.length - 1]._time).getTime();
-  const totalDays = Math.ceil((lastTime - firstTime) / (1000 * 60 * 60 * 24));
+  // For very large datasets, we need to be more aggressive with sampling
+  const targetPointCount = 1000; // Target number of points for smooth rendering
+  const samplingFactor = Math.ceil(sortedData.length / targetPointCount);
   
-  // Dynamically adjust sampling rate based on data density
-  // Use different sampling rates depending on data density:
-  // - For 0-30 days: Keep 1 point every 4 hours (6 points per day)
-  // - For 31-90 days: Keep 1 point every 6 hours (4 points per day)
-  // - For 91-180 days: Keep 1 point every 8 hours (3 points per day)
-  // - For 181-365 days: Keep 1 point every 12 hours (2 points per day)
-  const pointsPerDay = totalDays <= 30 ? 6 : 
-                       totalDays <= 90 ? 4 : 
-                       totalDays <= 180 ? 3 : 2;
-  
-  // Calculate the step size to achieve our desired points per day
-  const totalPoints = sortedData.length;
-  const samplingRate = Math.max(1, Math.floor(totalPoints / (totalDays * pointsPerDay)));
-  console.log(`365d processing: ${totalPoints} points across ${totalDays} days. Sampling every ${samplingRate} points to get ~${pointsPerDay} points per day.`);
-  
-  // Always include the first point
-  processed.push(sortedData[0]);
-  
-  // Sample points at regular intervals
-  for (let i = samplingRate; i < sortedData.length - 1; i += samplingRate) {
-    processed.push(sortedData[i]);
+  if (samplingFactor <= 1) {
+    return sortedData; // Small enough dataset, no preprocessing needed
   }
   
-  // Always include status change points (online->offline or offline->online)
-  for (let i = 1; i < sortedData.length - 1; i++) {
-    const current = sortedData[i];
-    const previous = sortedData[i-1];
+  const dailyProcessed = [];
+  let currentDay = null;
+  let statusChangePoints = [];
+  
+  // First pass: collect all status change points as these are the most important
+  let prevStatus = null;
+  for (let i = 0; i < sortedData.length; i++) {
+    const point = sortedData[i];
+    const timeStr = point.timestamp || point._time;
+    if (!timeStr) continue;
     
-    const currentIsOnline = current.online !== false;
-    const previousIsOnline = previous.online !== false;
+    const currentStatus = point.online !== false;
     
-    // If status changed and this point isn't already included
-    if (currentIsOnline !== previousIsOnline && !processed.includes(current)) {
-      processed.push(current);
+    // Always include status change points
+    if (prevStatus !== currentStatus || i === 0 || i === sortedData.length - 1) {
+      statusChangePoints.push(i);
+      prevStatus = currentStatus;
     }
   }
   
-  // Always include the last point
+  // Second pass: add regular sample points plus all status change points
+  for (let i = 0; i < sortedData.length; i++) {
+    const point = sortedData[i];
+    
+    // Always include status change points and regular samples
+    if (statusChangePoints.includes(i) || i % samplingFactor === 0) {
+      dailyProcessed.push(point);
+    }
+  }
+  
+  // Always ensure the last point is included
   const lastPoint = sortedData[sortedData.length - 1];
-  if (!processed.includes(lastPoint)) {
-    processed.push(lastPoint);
+  if (!dailyProcessed.includes(lastPoint)) {
+    dailyProcessed.push(lastPoint);
   }
   
-  // Sort the final array by time
-  processed.sort((a, b) => {
-    const timeA = a.timestamp || a._time;
-    const timeB = b.timestamp || b._time;
-    return new Date(timeA) - new Date(timeB);
-  });
-  
-  console.log(`365d data reduced from ${data.length} to ${processed.length} points`);
-  return processed;
-}
-
-/** Format time since in a human readable format */
-function formatTimeSince(ms) {
-  const seconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  
-  if (hours > 0) {
-    return `${hours}h ${minutes % 60}m ago`;
-  } else if (minutes > 0) {
-    return `${minutes}m ago`;
-  } else {
-    return `${seconds}s ago`;
-  }
+  console.log(`Reduced dataset from ${sortedData.length} to ${dailyProcessed.length} points`);
+  return dailyProcessed;
 }
