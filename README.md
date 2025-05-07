@@ -2,7 +2,7 @@
 
 A comprehensive IoT monitoring solution featuring BME280 temperature/humidity/pressure sensors, MQTT messaging, InfluxDB time-series database, and a React dashboard with advanced visualization and logging capabilities.
 
-![Dashboard Screenshot](docs/DASHBOARD-SCREENSHOT.png)
+![Dashboard Screenshot](./docs/DASHBOARD-SCREENSHOT.png)
 
 ## Enhanced Features
 
